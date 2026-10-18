@@ -343,16 +343,49 @@ function css(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-// A white arrow drawn once; MapLibre tints it per ship (SDF icon) and turns it to the ship's heading.
-function arrowImage() {
-  const s = 48, c = document.createElement('canvas');
-  c.width = c.height = s;
+// A ship hull seen from above, drawn once as a signed distance field so MapLibre can
+// tint it per ship, outline it and turn it to the ship's heading.
+// Moving ships are filled, moored ones outlined.
+function hullImage() {
+  const pad = 8, hw = 22, hh = 60, w = hw + 2 * pad, h = hh + 2 * pad;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
   const g = c.getContext('2d');
+  const l = pad, r = pad + hw, top = pad, bot = pad + hh, mid = w / 2, sh = hh * 0.36;
   g.fillStyle = '#fff';
   g.beginPath();
-  g.moveTo(s * 0.5, s * 0.06); g.lineTo(s * 0.84, s * 0.92); g.lineTo(s * 0.5, s * 0.74); g.lineTo(s * 0.16, s * 0.92);
+  g.moveTo(mid, top);
+  g.bezierCurveTo(r - 1, top + sh * 0.3, r, top + sh * 0.65, r, top + sh);
+  g.lineTo(r, bot - 5);
+  g.quadraticCurveTo(r, bot, r - 5, bot);
+  g.lineTo(l + 5, bot);
+  g.quadraticCurveTo(l, bot, l, bot - 5);
+  g.lineTo(l, top + sh);
+  g.bezierCurveTo(l, top + sh * 0.65, l + 1, top + sh * 0.3, mid, top);
   g.closePath(); g.fill();
-  return g.getImageData(0, 0, s, s);
+  const img = g.getImageData(0, 0, w, h), px = img.data;
+  const inside = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) inside[i] = px[i * 4 + 3] >= 128 ? 1 : 0;
+  const R = 8;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const me = inside[y * w + x];
+      let best = R;
+      for (let dy = -R; dy <= R; dy++) {
+        const yy = y + dy;
+        for (let dx = -R; dx <= R; dx++) {
+          const xx = x + dx;
+          const other = yy < 0 || yy >= h || xx < 0 || xx >= w ? 0 : inside[yy * w + xx];
+          if (other !== me) best = Math.min(best, Math.hypot(dx, dy));
+        }
+      }
+      const d = me ? 0.5 - best : best - 0.5; // negative inside the hull
+      const i = (y * w + x) * 4;
+      px[i] = px[i + 1] = px[i + 2] = 255;
+      px[i + 3] = Math.max(0, Math.min(255, Math.round(255 * (0.75 - d / R))));
+    }
+  }
+  return img;
 }
 
 map.on('style.load', () => {
@@ -369,32 +402,50 @@ map.on('style.load', () => {
   // Sizes grow with the zoom; the selected ship is drawn bigger at every zoom.
   const bySel = (selected, ...stops) => ['interpolate', ['linear'], ['zoom'],
     ...stops.flatMap(([z, v]) => [z, ['case', ['==', ['get', 'sel'], 1], selected, v]])];
-  if (!map.hasImage('arrow')) map.addImage('arrow', arrowImage(), { sdf: true, pixelRatio: 2 });
+  if (!map.hasImage('hull')) map.addImage('hull', hullImage(), { sdf: true, pixelRatio: 2 });
+  const hullSize = bySel(1.25, [2, 0.45], [5, 0.6], [8, 0.85], [11, 1.05], [14, 1.25]);
 
   map.addSource('track', { type: 'geojson', data: empty });
+  map.addSource('route', { type: 'geojson', data: empty });
+  map.addSource('hulls', { type: 'geojson', data: empty });
   map.addSource('ships', { type: 'geojson', data: empty });
 
+  // Where the ship is still going (dashed), then where it has been since we saw it.
+  map.addLayer({ id: 'route', type: 'line', source: 'route', filter: ['==', ['geometry-type'], 'LineString'],
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': ink, 'line-opacity': 0.7, 'line-width': 2.5, 'line-dasharray': [1.5, 2] } });
+  map.addLayer({ id: 'route-end', type: 'circle', source: 'route', filter: ['==', ['geometry-type'], 'Point'],
+    paint: { 'circle-radius': 7, 'circle-color': ground, 'circle-stroke-color': ink, 'circle-stroke-width': 3 } });
   map.addLayer({ id: 'track', type: 'line', source: 'track',
     layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': ink, 'line-opacity': 0.45, 'line-width': 4 } });
 
+  // Close in, ships that sent their size are drawn to scale.
+  map.addLayer({ id: 'hulls', type: 'fill', source: 'hulls',
+    paint: { 'fill-color': color, 'fill-opacity': ['case', ['==', ['get', 'mv'], 1], 0.9, 0.3] } });
+  map.addLayer({ id: 'hulls-line', type: 'line', source: 'hulls',
+    paint: { 'line-color': ['case', ['==', ['get', 'sel'], 1], ink, color], 'line-width': ['case', ['==', ['get', 'sel'], 1], 2.5, 1.5] } });
+
   map.addLayer({ id: 'ships-halo', type: 'circle', source: 'ships', filter: ['==', ['get', 'id'], -1],
     paint: { 'circle-radius': 22, 'circle-color': color, 'circle-opacity': 0.22 } });
-  map.addLayer({ id: 'ships-still', type: 'circle', source: 'ships', filter: ['==', ['get', 'mv'], 0],
+  map.addLayer({ id: 'ships-dot', type: 'circle', source: 'ships', filter: ['all', ['==', ['get', 'mv'], 0], ['==', ['get', 'hk'], 0], ['==', ['get', 'big'], 0]],
     paint: {
-      'circle-radius': bySel(8, [3, 2], [8, 3.5], [12, 5]),
+      'circle-radius': bySel(8, [2, 2.5], [8, 4.5], [12, 6]),
       'circle-color': color,
       'circle-opacity': ['case', ['==', ['get', 'old'], 1], 0.45, 1],
       'circle-stroke-color': ground,
       'circle-stroke-width': bySel(3, [3, 0.5], [8, 1.5]),
     } });
-  map.addLayer({ id: 'ships-moving', type: 'symbol', source: 'ships', filter: ['==', ['get', 'mv'], 1],
-    layout: {
-      'icon-image': 'arrow', 'icon-rotate': ['get', 'hdg'], 'icon-rotation-alignment': 'map',
-      'icon-allow-overlap': true, 'icon-ignore-placement': true,
-      'icon-size': bySel(1.5, [3, 0.45], [8, 0.75], [12, 1.05]),
-      'symbol-sort-key': ['get', 'sel'],
-    },
+  const hullLayout = {
+    'icon-image': 'hull', 'icon-rotate': ['get', 'hdg'], 'icon-rotation-alignment': 'map',
+    'icon-allow-overlap': true, 'icon-ignore-placement': true, 'icon-size': hullSize, 'symbol-sort-key': ['get', 'sel'],
+  };
+  map.addLayer({ id: 'ships-still', type: 'symbol', source: 'ships', filter: ['all', ['==', ['get', 'mv'], 0], ['==', ['get', 'hk'], 1], ['==', ['get', 'big'], 0]],
+    layout: hullLayout,
+    paint: { 'icon-color': ground, 'icon-halo-color': color, 'icon-halo-width': 2.2, 'icon-halo-blur': 0,
+      'icon-opacity': ['case', ['==', ['get', 'old'], 1], 0.45, 1] } });
+  map.addLayer({ id: 'ships-moving', type: 'symbol', source: 'ships', filter: ['all', ['==', ['get', 'mv'], 1], ['==', ['get', 'big'], 0]],
+    layout: hullLayout,
     paint: { 'icon-color': color, 'icon-halo-color': ground, 'icon-halo-width': 1.5, 'icon-halo-blur': 0,
       'icon-opacity': ['case', ['==', ['get', 'old'], 1], 0.45, 1] } });
   if (map.getStyle().glyphs) {
@@ -405,6 +456,10 @@ map.on('style.load', () => {
     map.addLayer({ id: 'ships-label', type: 'symbol', source: 'ships', filter: ['==', ['get', 'id'], -1],
       layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 13,
         'text-offset': [1.4, 0], 'text-anchor': 'left', 'text-allow-overlap': true },
+      paint: { 'text-color': ink, 'text-halo-color': ground, 'text-halo-width': 2 } });
+    map.addLayer({ id: 'route-name', type: 'symbol', source: 'route', filter: ['==', ['geometry-type'], 'Point'],
+      layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 13,
+        'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-allow-overlap': true },
       paint: { 'text-color': ink, 'text-halo-color': ground, 'text-halo-width': 2 } });
   }
   addOverlays();
@@ -417,6 +472,8 @@ map.on('style.load', () => {
 const TAP_RADIUS = 20; // px
 
 function shipAt(point) {
+  const hull = map.getLayer('hulls') && map.queryRenderedFeatures(point, { layers: ['hulls'] })[0];
+  if (hull) return hull.properties.id;
   let best = null;
   let bestDist = TAP_RADIUS;
   for (const [id, pos] of state.positions) {
@@ -542,7 +599,9 @@ function draw() {
   const counts = Object.fromEntries(Object.keys(CATS).map((k) => [k, 0]));
   const labels = map.getZoom() >= 11;
   state.positions.clear();
-  const features = [];
+  const features = [], hulls = [];
+  const zoomScale = 40_075_016.686 / (512 * 2 ** map.getZoom());
+  const mpp = (lat) => zoomScale * Math.cos((lat * Math.PI) / 180); // metres per screen pixel
   for (const e of state.ships.values()) {
     if (now - Math.max(e.t, e.born) > EXPIRE_MS) { if (e.mmsi !== state.selected) state.ships.delete(e.mmsi); continue; }
     if (e.lat == null) continue; // name or type known, position not yet
@@ -554,10 +613,17 @@ function draw() {
     if (!state.show[e.cat] && !sel) continue;
     state.positions.set(e.mmsi, [lat, lon]);
     const h = heading(e);
-    const props = { id: e.mmsi, cat: e.cat, sel: sel ? 1 : 0, mv: e.sog >= 0.5 && h != null ? 1 : 0, hdg: h ?? 0, old: now - e.t > STALE_MS ? 1 : 0 };
+    const mv = e.sog >= 0.5 && h != null ? 1 : 0;
+    const dir = mv ? h : e.hdg; // a moored ship's course over ground means nothing
+    // To scale once the real hull would look longer than the icon does.
+    const big = dir != null && e.dim && (e.dim[0] + e.dim[1]) / mpp(lat) >= HULL_MIN_PX ? 1 : 0;
+    const props = { id: e.mmsi, cat: e.cat, sel: sel ? 1 : 0, mv, hk: dir != null ? 1 : 0, hdg: dir ?? 0, big, old: now - e.t > STALE_MS ? 1 : 0 };
     if ((labels || sel) && e.name) props.label = e.name;
     features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: props });
+    if (big) hulls.push({ type: 'Feature', geometry: { type: 'Polygon', coordinates: [hullOutline(lat, lon, dir, e.dim)] },
+      properties: { id: e.mmsi, cat: e.cat, sel: props.sel, mv } });
   }
+  map.getSource('hulls')?.setData({ type: 'FeatureCollection', features: hulls });
   features.sort((a, c) => a.properties.sel - c.properties.sel); // selected ship on top
   map.getSource('ships')?.setData({ type: 'FeatureCollection', features });
   state.counts = counts;
@@ -567,6 +633,8 @@ function draw() {
     const p = posNow(cur, now);
     if (state.following) map.easeTo({ center: [p[1], p[0]], offset: sheetOffset(), duration: 900 });
     drawTrack(cur, p);
+    planRoute(cur);
+    drawRoute(cur, p);
     if (panelDirty || frame % 2 === 0) { panelDirty = false; tickPanel(cur); }
   }
   if (frame++ % 2 === 0) refreshChips();
@@ -575,6 +643,29 @@ function draw() {
       ? `${features.length.toLocaleString()} ships in view · ${state.rate.toLocaleString(undefined, { maximumFractionDigits: state.rate < 10 ? 1 : 0 })} reports/s`
       : 'Live · waiting for the first ships…';
   }
+}
+
+const HULL_MIN_PX = 34;
+
+// The ship's outline in map coordinates. AIS sizes are distances from the GPS antenna
+// (the reported position) to the bow, stern, port and starboard sides.
+function hullOutline(lat, lon, hdg, [a, b, c, d]) {
+  const len = a + b, beam = c + d, mid = (d - c) / 2;
+  const bow = Math.min(len * 0.3, beam * 1.6), k = Math.min(beam * 0.18, len * 0.05);
+  const local = [[-c, -b + k], [-c + k, -b], [d - k, -b], [d, -b + k], [d, a - bow]];
+  for (let i = 1; i < 6; i++) {
+    const t = (i / 6) * (Math.PI / 2);
+    local.push([d - (d - mid) * (1 - Math.cos(t)), a - bow + bow * Math.sin(t)]);
+  }
+  local.push([mid, a]);
+  for (let i = 5; i > 0; i--) {
+    const t = (i / 6) * (Math.PI / 2);
+    local.push([-c + (mid + c) * (1 - Math.cos(t)), a - bow + bow * Math.sin(t)]);
+  }
+  local.push([-c, a - bow], [-c, -b + k]);
+  const r = (hdg * Math.PI) / 180, cos = Math.cos(r), sin = Math.sin(r);
+  const mLat = 111_320, mLon = 111_320 * Math.cos((lat * Math.PI) / 180);
+  return local.map(([x, y]) => [lon + (x * cos + y * sin) / mLon, lat + (y * cos - x * sin) / mLat]);
 }
 
 function drawTrack(e, p) {
@@ -588,6 +679,235 @@ function drawTrack(e, p) {
   }
   src.setData({ type: 'FeatureCollection', features: pts.length > 1
     ? [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: pts } }] : [] });
+}
+
+// ---------- where the ship is heading ----------
+// AIS only says where a ship is going as free text, often a UN/LOCODE such as "NL RTM".
+// We look that port up, then follow the world's shipping lanes to draw an approximate route.
+
+const fetchJson = (u) => fetch(u).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${u} answered ${r.status}`))));
+const norm = (s) => String(s).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]+/g, ' ').trim();
+// Words in destinations that are not part of a port name.
+const DEST_NOISE = new Set(['ANCH', 'ANCHORAGE', 'ANCHOR', 'PILOT', 'PBG', 'NAB', 'OPL', 'ROADS', 'ROAD', 'FOR', 'ORDER', 'ORDERS',
+  'PORT', 'OFF', 'ETA', 'VIA', 'TO', 'FROM', 'AND', 'BERTH', 'TERMINAL', 'ARRIVAL', 'WAITING', 'AREA', 'BOARDING', 'STATION']);
+
+let portsP = null, seaP = null;
+function portData() {
+  return (portsP ||= fetchJson('data/ports.json').then((codes) => {
+    const names = new Map();
+    const add = (name, code) => {
+      const k = norm(name);
+      if (!k) return;
+      if (!names.has(k)) names.set(k, []);
+      if (!names.get(k).includes(code)) names.get(k).push(code);
+    };
+    for (const [cc, list] of Object.entries(codes)) {
+      if (cc === '=') continue;
+      for (const [loc, [name]] of Object.entries(list)) {
+        add(name, cc + loc);
+        for (const part of name.split(/[()]/)) add(part.replace(/^\s*ex\s+/i, ''), cc + loc); // "Saint Petersburg (ex Leningrad)"
+      }
+    }
+    for (const [name, code] of Object.entries(codes['='] || {})) add(name, code);
+    return { codes, names };
+  }).catch((err) => { portsP = null; throw err; }));
+}
+
+// The shipping-lane network as a compact graph.
+function seaData() {
+  return (seaP ||= fetchJson('data/sea.json').then(({ nodes, edges }) => {
+    const n = nodes.length / 2, lon = new Float64Array(n), lat = new Float64Array(n);
+    for (let i = 0; i < n; i++) { lon[i] = nodes[2 * i]; lat[i] = nodes[2 * i + 1]; }
+    const start = new Uint32Array(n + 1);
+    for (const v of edges) start[v + 1]++;
+    for (let i = 0; i < n; i++) start[i + 1] += start[i];
+    const adj = new Uint32Array(edges.length), fill = start.slice(0, n);
+    for (let i = 0; i < edges.length; i += 2) {
+      adj[fill[edges[i]]++] = edges[i + 1];
+      adj[fill[edges[i + 1]]++] = edges[i];
+    }
+    return { n, lon, lat, start, adj };
+  }).catch((err) => { seaP = null; throw err; }));
+}
+
+function km(lat1, lon1, lat2, lon2) {
+  const a = Math.sin(rad(lat2 - lat1) / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(rad(lon2 - lon1) / 2) ** 2;
+  return 12_742 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+// Shortest distance along the lanes from every node to one node (Dijkstra); prev[] points the way there.
+function lanesTo(g, goal) {
+  const dist = new Float64Array(g.n).fill(Infinity), prev = new Int32Array(g.n).fill(-1);
+  const heap = [[0, goal]];
+  dist[goal] = 0;
+  const push = (item) => {
+    let i = heap.push(item) - 1;
+    while (i > 0) {
+      const up = (i - 1) >> 1;
+      if (heap[up][0] <= item[0]) break;
+      heap[i] = heap[up]; i = up;
+    }
+    heap[i] = item;
+  };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) {
+      let i = 0;
+      for (;;) {
+        let c = 2 * i + 1;
+        if (c >= heap.length) break;
+        if (c + 1 < heap.length && heap[c + 1][0] < heap[c][0]) c++;
+        if (heap[c][0] >= last[0]) break;
+        heap[i] = heap[c]; i = c;
+      }
+      heap[i] = last;
+    }
+    return top;
+  };
+  while (heap.length) {
+    const [d, u] = pop();
+    if (d > dist[u]) continue;
+    for (let k = g.start[u]; k < g.start[u + 1]; k++) {
+      const v = g.adj[k], nd = d + km(g.lat[u], g.lon[u], g.lat[v], g.lon[v]);
+      if (nd < dist[v]) { dist[v] = nd; prev[v] = u; push([nd, v]); }
+    }
+  }
+  return { dist, prev };
+}
+
+function nearestNode(g, lat, lon) {
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < g.n; i++) {
+    const d = km(lat, lon, g.lat[i], g.lon[i]);
+    if (d < bestD) { best = i; bestD = d; }
+  }
+  return [best, bestD];
+}
+
+// Free-text destination -> { name, cc, lat, lon }, or null when we can't place it.
+const portCache = new Map();
+function findPort(text, at) {
+  const key = norm(text);
+  if (!portCache.has(key)) portCache.set(key, lookUpPort(text, at).catch(() => { portCache.delete(key); return null; }));
+  return portCache.get(key);
+}
+async function lookUpPort(text, at) {
+  const P = await portData();
+  const s = norm(String(text).split('>').pop()) || norm(text); // "FR LEH>GB SOU": where it goes next
+  if (!s) return null;
+  const nearest = (codes) => codes.map((c) => [c, P.codes[c.slice(0, 2)][c.slice(2)]])
+    .sort((a, b) => (a[1][1] == null) - (b[1][1] == null)
+      || (a[1][1] != null && b[1][1] != null ? km(at[0], at[1], a[1][1], a[1][2]) - km(at[0], at[1], b[1][1], b[1][2]) : 0))[0];
+  const words = s.split(' ');
+  const tried = [words.join(' ')];
+  const clean = words.filter((w) => !DEST_NOISE.has(w));
+  for (let len = clean.length; len >= 1; len--) {
+    for (let i = 0; i + len <= clean.length; i++) tried.push(clean.slice(i, i + len).join(' '));
+  }
+  let hit = P.names.get(tried[0]) && nearest(P.names.get(tried[0]));
+  if (!hit) {
+    for (const m of s.matchAll(/\b([A-Z]{2}) ?([A-Z0-9]{3})\b/g)) {
+      const p = P.codes[m[1]]?.[m[2]];
+      if (p) { hit = [m[1] + m[2], p]; break; }
+    }
+  }
+  if (!hit) {
+    for (const t of tried.slice(1)) {
+      if (t.length < 4 || !P.names.has(t)) continue;
+      hit = nearest(P.names.get(t));
+      break;
+    }
+  }
+  if (hit) {
+    const [code, [name, lat, lon]] = hit;
+    if (lat != null) return { name, cc: code.slice(0, 2), lat, lon };
+    const { places = [] } = await fetchJson(`/api/search?q=${encodeURIComponent(name)}`);
+    const p = places.find((q) => q.cc === code.slice(0, 2));
+    return p ? { name, cc: code.slice(0, 2), lat: p.lat, lon: p.lon } : null;
+  }
+  // Not a port we know: ask the place search, and keep the answer closest to the ship.
+  const { places = [] } = await fetchJson(`/api/search?q=${encodeURIComponent(clean.join(' ') || s)}`);
+  const p = places.sort((a, b) => km(at[0], at[1], a.lat, a.lon) - km(at[0], at[1], b.lat, b.lon))[0];
+  return p && km(at[0], at[1], p.lat, p.lon) < 8000 ? { name: p.name, cc: p.cc, lat: p.lat, lon: p.lon } : null;
+}
+
+// One plan for the selected ship: its destination, and the lanes leading there.
+let plan = null;
+function planRoute(e) {
+  const dest = e.dest || '';
+  if (plan && plan.mmsi === e.mmsi && plan.dest === dest) return;
+  const mine = { mmsi: e.mmsi, dest, status: dest ? 'loading' : 'none', place: null, g: null, tree: null, goal: -1, goalKm: 0 };
+  plan = mine;
+  if (!dest) return;
+  const at = posNow(e, Date.now());
+  Promise.all([findPort(dest, at), seaData()]).then(([place, g]) => {
+    if (plan !== mine) return;
+    if (!place) { mine.status = 'none'; panelDirty = true; return; }
+    const [goal, goalKm] = nearestNode(g, place.lat, place.lon);
+    Object.assign(mine, { status: 'ok', place, g, goal, goalKm, tree: goalKm < 400 ? lanesTo(g, goal) : null });
+    panelDirty = true;
+    draw();
+  }).catch(() => { if (plan === mine) { mine.status = 'none'; panelDirty = true; } });
+}
+
+// The line from where the ship is now to its destination, and how far that is.
+function routeLine(p) {
+  const { place, g, tree, goal, goalKm } = plan;
+  const [lat, lon] = p;
+  const direct = km(lat, lon, place.lat, place.lon);
+  let coords = [[lon, lat], [place.lon, place.lat]], total = direct;
+  if (tree && direct > 40) {
+    // Join the lanes where that makes the whole trip shortest, without long jumps over land.
+    const d = new Float64Array(g.n);
+    let near = Infinity;
+    for (let i = 0; i < g.n; i++) { d[i] = km(lat, lon, g.lat[i], g.lon[i]); if (d[i] < near) near = d[i]; }
+    const reach = Math.max(100, near * 1.5);
+    let best = -1, score = Infinity;
+    for (let i = 0; i < g.n; i++) {
+      if (d[i] > reach || tree.dist[i] === Infinity) continue;
+      const s = 6 * d[i] + tree.dist[i];
+      if (s < score) { score = s; best = i; }
+    }
+    if (best >= 0 && d[best] + tree.dist[best] + goalKm < direct * 8) {
+      coords = [[lon, lat]];
+      for (let v = best; v >= 0; v = v === goal ? -1 : tree.prev[v]) coords.push([g.lon[v], g.lat[v]]);
+      coords.push([place.lon, place.lat]);
+      total = d[best] + tree.dist[best] + goalKm;
+    }
+  }
+  for (let i = 1; i < coords.length; i++) { // keep the line continuous across the date line
+    while (coords[i][0] - coords[i - 1][0] > 180) coords[i][0] -= 360;
+    while (coords[i][0] - coords[i - 1][0] < -180) coords[i][0] += 360;
+  }
+  return { coords, nm: total / 1.852 };
+}
+
+function drawRoute(e, p) {
+  const src = map.getSource('route');
+  if (!src) return;
+  if (!plan || plan.mmsi !== e.mmsi || plan.status !== 'ok') {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    return;
+  }
+  const r = routeLine(p);
+  plan.nm = r.nm;
+  plan.coords = r.coords;
+  const end = r.coords[r.coords.length - 1];
+  src.setData({ type: 'FeatureCollection', features: [
+    { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: r.coords } },
+    { type: 'Feature', properties: { name: plan.place.name }, geometry: { type: 'Point', coordinates: end } },
+  ] });
+}
+
+// Zoom out to show the whole way to the destination.
+function showRoute() {
+  if (!plan?.coords) return;
+  const b = new maplibregl.LngLatBounds(plan.coords[0], plan.coords[0]);
+  for (const c of plan.coords) b.extend(c);
+  setFollowing(false);
+  const pad = phone.matches ? { top: 140, bottom: panel.offsetHeight + 30, left: 30, right: 30 }
+    : { top: 60, bottom: 60, left: 60, right: 60 };
+  map.fitBounds(b, { padding: pad, maxZoom: 12, duration: 900 });
 }
 
 // ---------- live feed ----------
@@ -721,6 +1041,8 @@ function deselect() {
   setSelectedFilters();
   renderPanel();
   map.getSource('track')?.setData({ type: 'FeatureCollection', features: [] });
+  map.getSource('route')?.setData({ type: 'FeatureCollection', features: [] });
+  plan = null;
   draw();
 }
 
@@ -798,11 +1120,11 @@ function renderPanel() {
       <div class="card"><small>Speed</small><b id="speed">–</b><em id="speed-kmh"></em></div>
       <div class="card"><small>Course</small><b id="course">–</b><em id="heading"></em></div>
     </div>
-    <div class="next">
+    <button type="button" class="next" id="dest-box" title="Show the route on the map">
       <span class="dot" style="background: var(--c)"></span>
-      <div class="grow"><small>Destination</small><strong id="dest"></strong></div>
-      <div class="countdown"><b id="countdown"></b><span id="eta"></span></div>
-    </div>
+      <span class="grow"><small>Destination</small><strong id="dest"></strong><small id="dest-to"></small></span>
+      <span class="countdown"><b id="countdown"></b><span id="eta"></span></span>
+    </button>
     <div class="actions">
       <button type="button" class="btn primary" id="follow">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
@@ -812,9 +1134,10 @@ function renderPanel() {
     </div>
     <section class="details"><h3>Ship</h3><dl id="facts"></dl></section>
     <p class="note">${state.mode === 'demo' ? 'Simulated ship: real ships appear once the app runs on Cloudflare with an aisstream.io key.'
-      : 'AIS data from <a href="https://aisstream.io">aisstream.io</a> · the line shows where the ship went since you opened the map'}</p>`;
+      : 'AIS data from <a href="https://aisstream.io">aisstream.io</a>. The solid line is where the ship went since you opened the map; AIS does not say where a voyage started. The dashed line is an estimated sea route to the destination the crew entered.'}</p>`;
 
   $('#close').onclick = deselect;
+  $('#dest-box').onclick = showRoute;
   $('#follow').onclick = () => setFollowing(!state.following);
   const toggle = () => { panel.classList.toggle('expanded'); renderPanel(); keepShipVisible(); };
   $('#more').onclick = toggle;
@@ -839,8 +1162,15 @@ function tickPanel(e) {
   $('#heading').textContent = e.hdg != null ? `heading ${num(e.hdg)}°` : '';
   $('#dest').textContent = e.dest || 'Not reported';
   const t = etaMs(e.eta);
-  $('#countdown').textContent = t ? until(t) : '';
-  $('#eta').textContent = t ? fmtTime(t) : '';
+  const p = plan?.mmsi === e.mmsi ? plan : null;
+  const ok = p?.status === 'ok' && p.nm != null;
+  // Without an ETA from the crew, estimate one from the distance left at the current speed.
+  const guess = !t && ok && e.sog >= 1 ? now + (p.nm / e.sog) * 3_600_000 : null;
+  $('#countdown').textContent = t ? until(t) : guess ? `≈ ${until(guess)}` : '';
+  $('#eta').textContent = t ? fmtTime(t) : guess ? 'at this speed' : '';
+  $('#dest-to').textContent = !e.dest ? '' : ok ? `${p.place.name}${p.place.cc ? `, ${p.place.cc}` : ''} · ${num(p.nm)} nm to go`
+    : p?.status === 'loading' ? 'Finding the port…' : p?.status === 'none' ? 'Port not found, so no route' : '';
+  $('#dest-box').disabled = !ok;
   const [lat, lon] = posNow(e, now);
   const len = e.dim ? e.dim[0] + e.dim[1] : null, beam = e.dim ? e.dim[2] + e.dim[3] : null;
   const nav = NAV[e.nav] || (e.sog >= 0.5 ? 'Under way' : e.sog != null ? 'Stopped' : null);

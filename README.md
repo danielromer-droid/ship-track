@@ -20,7 +20,9 @@ What it shows:
 ```
 public/              the page, served as static files by Cloudflare
   index.html, style.css, app.js     MapLibre map (OpenFreeMap tiles), panel, search, filters, demo mode
+  data/ports.json, data/sea.json   seaports (UN/LOCODE) and world shipping lanes, for routes to the destination
   sw.js, manifest.webmanifest, icons/   install-as-app support
+tools/make_sea_data.py   rebuilds the two data files from their sources
 src/worker.js        the Worker: /api/stream (live AIS WebSocket), /api/health, /api/search, /api/where
 wrangler.toml        Cloudflare config (Worker + static assets)
 .github/workflows/deploy.yml  optional deploy from GitHub Actions
@@ -51,12 +53,17 @@ Every push to `main` then redeploys. With the command line instead: `npm install
 | Map | [OpenFreeMap](https://openfreemap.org) (OpenStreetMap) | Free, no key | Same base map as TrainLive. Satellite imagery from Esri. |
 | Weather, waves | [Open-Meteo](https://open-meteo.com), [RainViewer](https://www.rainviewer.com) | Free, no key | Fetched by the browser only when the weather button is on. |
 | Port search | [Photon](https://photon.komoot.io) (OpenStreetMap) | Free, no key | Cached for a day by the Worker. |
+| Ports | [UN/LOCODE](https://unece.org/trade/cefact/unlocode-code-list-country-and-territory) via [datasets/un-locode](https://github.com/datasets/un-locode) | Free | Turns destinations such as `NL RTM` into a place on the map. |
+| Shipping lanes | Eurostat MARNET, as packaged by [searoute](https://github.com/johnx25bd/searoute) (MIT) | Free | The dashed route follows these lanes, so it is an estimate, not the crew's passage plan. |
 
 Things to know about AIS:
 - A moving ship reports every 2 to 10 seconds, a ship at anchor or moored only every 3 minutes, and names and destinations
   every 6 minutes. A freshly opened map therefore fills in over a few minutes. The app remembers ships it saw in your
   browser for 30 minutes, and their names and types for a week, so reopening it is instant and ships are coloured at once.
 - Destinations and ETAs are typed in by the crew and are often abbreviated or out of date.
+- AIS never says where a voyage started. Tapping a ship shows its track since the map first saw it (solid) and an
+  estimated sea route to its destination (dashed); tap the destination box to see the whole route.
+- Ships are drawn as hulls turned to their heading; close in, ships that send their size are drawn to scale.
 - Each open browser tab uses one aisstream.io connection. That is fine for personal use and a modest audience; for a
   large public site, move the upstream connection into one shared Durable Object (Workers Paid plan) so all viewers
   share a single feed.

@@ -164,7 +164,7 @@ async function search(url, ctx) {
     const p = f.properties || {};
     const [lon, lat] = f.geometry?.coordinates || [];
     const port = /harbour|port|marina|ferry|pier|dock/i.test(`${p.osm_value} ${p.osm_key} ${p.name}`);
-    return { name: p.name, detail: [p.city !== p.name ? p.city : null, p.country].filter(Boolean).join(', '), lat, lon, port,
+    return { name: p.name, detail: [p.city !== p.name ? p.city : null, p.country].filter(Boolean).join(', '), cc: p.countrycode || null, lat, lon, port,
       extent: p.extent || null };
   }).filter((p) => p.name && Number.isFinite(p.lat) && Number.isFinite(p.lon));
   const out = json({ places }, 200, { 'Cache-Control': 'public, max-age=86400' });

@@ -47,9 +47,10 @@
     <main class="mapwrap">
       <div id="map"></div>
       <ul class="legend" aria-label="Legend">
-        <li><i class="shape arrow"></i>Under way</li>
-        <li><i class="shape still"></i>Anchored or moored</li>
-        <li><i class="shape unknown"></i>Type not sent yet</li>
+        <li><svg class="shape" width="12" height="16" viewBox="0 0 12 16" aria-hidden="true"><path d="M6 1C9 3 10 5 10 7v6.5Q10 15 8.5 15h-5Q2 15 2 13.5V7c0-2 1-4 4-6z" fill="currentColor"/></svg>Under way</li>
+        <li><svg class="shape" width="12" height="16" viewBox="0 0 12 16" aria-hidden="true"><path d="M6 1C9 3 10 5 10 7v6.5Q10 15 8.5 15h-5Q2 15 2 13.5V7c0-2 1-4 4-6z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Anchored or moored</li>
+        <li class="unknown"><svg class="shape" width="12" height="16" viewBox="0 0 12 16" aria-hidden="true"><path d="M6 1C9 3 10 5 10 7v6.5Q10 15 8.5 15h-5Q2 15 2 13.5V7c0-2 1-4 4-6z" fill="currentColor"/></svg>Type not sent yet</li>
+        <li><svg class="shape" width="16" height="12" viewBox="0 0 16 12" aria-hidden="true"><path d="M1 6h14" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2.5"/></svg>Route to destination</li>
       </ul>
 
       <div id="following" class="following" hidden>
