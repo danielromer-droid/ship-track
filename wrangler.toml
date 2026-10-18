@@ -1,8 +1,14 @@
-# Used by `npx wrangler deploy` and by the GitHub Actions workflow (deploy options 2 and 3 in the README).
+# One Worker serves both the map page (./public) and the /api/* endpoints.
 name = "ship-track"
-main = "dist/worker.js"
+main = "src/worker.js"
 compatibility_date = "2025-09-01"
 # Keep variables added in the Cloudflare dashboard when deploying from GitHub.
 keep_vars = true
 
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
 # The aisstream.io key is a secret, not a variable: `npx wrangler secret put AISSTREAM_API_KEY`
+# (or Settings → Variables and Secrets in the dashboard).

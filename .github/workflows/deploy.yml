@@ -17,10 +17,8 @@ jobs:
       AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
     steps:
       - uses: actions/checkout@v4
-      - name: Build the single-file Worker
-        run: python3 tools/build_worker.py
       - name: Check the scripts parse
-        run: node --check public/app.js && node --check dist/worker.js
+        run: node --check public/app.js && node --check src/worker.js
       - name: Deploy to Cloudflare
         if: env.HAS_TOKEN == 'true'
         uses: cloudflare/wrangler-action@v3
