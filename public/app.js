@@ -143,13 +143,23 @@
     const t = document.documentElement.getAttribute("data-theme");
     return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   };
-  let tiles = null;
+  // Base map: Esri's ocean and dark grey basemaps need no key. If they fail to load, fall back to OpenStreetMap.
+  const AIS_ATTR = ' · AIS <a href="https://aisstream.io">aisstream.io</a>';
+  const TILESETS = {
+    light: { url: "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}", maxNativeZoom: 13,
+      attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a>, GEBCO, NOAA, Garmin, HERE' + AIS_ATTR },
+    dark: { url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", maxNativeZoom: 16,
+      attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a>, HERE, Garmin, OpenStreetMap' + AIS_ATTR },
+    osm: { url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png", maxNativeZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' + AIS_ATTR },
+  };
+  let tiles = null, tileFails = 0, useOsm = false;
   function setTiles() {
     if (tiles) map.removeLayer(tiles);
-    tiles = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark() ? "dark_all" : "light_all"}/{z}/{x}/{y}{r}.png`, {
-      subdomains: "abcd", maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a> · AIS <a href="https://aisstream.io">aisstream.io</a>',
-    }).addTo(map);
+    const t = TILESETS[useOsm ? "osm" : dark() ? "dark" : "light"];
+    tileFails = 0;
+    tiles = L.tileLayer(t.url, { maxZoom: 19, maxNativeZoom: t.maxNativeZoom, attribution: t.attribution }).addTo(map);
+    tiles.on("tileerror", () => { if (!useOsm && ++tileFails > 8) { useOsm = true; setTiles(); } });
   }
   setTiles();
   function onTheme() {
@@ -408,8 +418,9 @@
       S.msgs++;
       onAis(m);
     };
-    sock.onclose = () => {
+    sock.onclose = (ev) => {
       if (ws === sock) ws = null;
+      if (!S.lastError && ev.reason && ev.reason !== "bye") S.lastError = ev.reason;
       if (document.hidden) return;
       const keyBad = /key/i.test(S.lastError || "");
       const wait = keyBad ? 60e3 : Math.min(30e3, 2000 * 2 ** retry++);

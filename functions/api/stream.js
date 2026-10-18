@@ -5,7 +5,7 @@
 import { UPSTREAM, AIS_TYPES, json, cleanBoxes } from "../../lib/util.js";
 
 export async function onRequestGet(ctx) {
-  const key = ctx.env.AISSTREAM_API_KEY;
+  const key = (ctx.env.AISSTREAM_API_KEY || "").trim();
   if ((ctx.request.headers.get("upgrade") || "").toLowerCase() !== "websocket") {
     return json({ error: "connect with a WebSocket", live: !!key }, { status: 426 });
   }
@@ -43,7 +43,10 @@ export async function onRequestGet(ctx) {
     ws.addEventListener("message", (ev) => {
       try { server.send(ev.data); } catch { close(1011, "viewer gone"); }
     });
-    ws.addEventListener("close", (ev) => close(1011, `upstream closed ${ev.code}`));
+    ws.addEventListener("close", (ev) => {
+      tell({ error: `aisstream.io closed the feed (${ev.code}${ev.reason ? ` ${ev.reason}` : ""})` });
+      close(1011, "upstream closed");
+    });
     ws.addEventListener("error", () => close(1011, "upstream error"));
   }
 
