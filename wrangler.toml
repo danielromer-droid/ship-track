@@ -1,0 +1,6 @@
+# Used by `npx wrangler deploy` and by the GitHub Actions workflow (deploy options 2 and 3 in the README).
+name = "ship-track"
+main = "dist/worker.js"
+compatibility_date = "2025-09-01"
+
+# The aisstream.io key is a secret, not a variable: `npx wrangler secret put AISSTREAM_API_KEY`

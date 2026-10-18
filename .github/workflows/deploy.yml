@@ -1,0 +1,34 @@
+# Deploys the Worker to Cloudflare on every push to main.
+# Needs two repository secrets (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN  (template "Edit Cloudflare Workers")
+#   CLOUDFLARE_ACCOUNT_ID
+# and optionally AISSTREAM_API_KEY, which is copied into the Worker as a secret on each deploy.
+name: Deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+      AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the single-file Worker
+        run: python3 tools/build_worker.py
+      - name: Check the scripts parse
+        run: node --check public/app.js && node --check dist/worker.js
+      - name: Deploy to Cloudflare
+        if: env.HAS_TOKEN == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+          secrets: ${{ env.AISSTREAM_API_KEY != '' && 'AISSTREAM_API_KEY' || '' }}
+      - name: Explain the skipped deploy
+        if: env.HAS_TOKEN != 'true'
+        run: echo "::notice::Add the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets to deploy automatically."

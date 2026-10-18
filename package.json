@@ -1,0 +1,12 @@
+{
+  "name": "ship-track",
+  "private": true,
+  "scripts": {
+    "build": "python3 tools/build_worker.py",
+    "dev": "python3 tools/build_worker.py && wrangler dev",
+    "deploy": "python3 tools/build_worker.py && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ship Track</title>
+<meta name="description" content="Live ship tracker: every vessel on a map with name, type, flag, speed, course and destination.">
+<meta name="theme-color" content="#0f6e8c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <div id="map" role="application" aria-label="Live ship map"></div>
+
+  <header class="bar">
+    <div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15h18l-2.6 4.6a2 2 0 0 1-1.7 1H7.3a2 2 0 0 1-1.7-1zM6 13V9h5V4h2v5h3l2 4z"/></svg><span>Ship Track</span></div>
+    <label class="search" for="q">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Ship name, MMSI, IMO or call sign" autocomplete="off" spellcheck="false" list="q-list">
+      <datalist id="q-list"></datalist>
+    </label>
+    <div id="status" class="chip" aria-live="polite"><span class="dot"></span><span id="status-t">Connecting…</span></div>
+    <div class="tools">
+      <button id="b-tags" class="btn" type="button" aria-pressed="true" title="Show ship names"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/></svg><span>Names</span></button>
+      <button id="b-units" class="btn" type="button" title="Switch units"><svg viewBox="0 0 24 24"><path d="M4 8h16M4 16h16M8 4v8M16 12v8"/></svg><span id="units-t">Nautical</span></button>
+      <button id="b-locate" class="btn" type="button" title="Go to my location"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+    </div>
+  </header>
+
+  <div class="legend" id="legend" aria-label="Ship types: tap to show or hide"></div>
+  <div class="hint" id="hint">Tap a ship to see its name, flag, speed, course and destination.</div>
+  <div class="tip" id="tip" hidden></div>
+
+  <aside id="card" class="card" hidden aria-label="Selected ship"></aside>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
