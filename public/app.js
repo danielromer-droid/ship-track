@@ -1149,22 +1149,33 @@ function renderPanel() {
   tickPanel(e);
 }
 
-// A photo of the ship from Wikimedia Commons, looked up by its IMO number.
+// A photo of the ship from Wikimedia Commons, looked up by IMO number, else by name.
 const photos = new Map();
 function showPhoto(e) {
-  if (state.mode !== 'live' || !e.imo) return;
-  if (!photos.has(e.imo)) {
-    photos.set(e.imo, fetchJson(`/api/photo?imo=${e.imo}`).catch(() => { photos.delete(e.imo); return { photo: null }; }));
+  const fig = $('#photo');
+  if (!fig || state.mode !== 'live') return;
+  const name = (e.name || '').trim();
+  if (!e.imo && name.length < 5) return; // its details have not arrived yet
+  const key = `${e.imo || ''}|${name}`;
+  if (!photos.has(key)) {
+    const q = new URLSearchParams({ ...(e.imo ? { imo: e.imo } : {}), ...(name ? { name } : {}) });
+    photos.set(key, fetchJson(`/api/photo?${q}`).catch(() => { photos.delete(key); return { photo: null, failed: true }; }));
   }
-  photos.get(e.imo).then((p) => {
-    const fig = $('#photo');
-    if (!p.photo || !fig || state.selected !== e.mmsi) return;
-    const img = fig.querySelector('img');
-    img.onload = () => { fig.hidden = false; };
+  photos.get(key).then((p) => {
+    if (state.selected !== e.mmsi || !fig.isConnected) return;
+    const img = fig.querySelector('img'), cap = fig.querySelector('figcaption');
+    const none = () => {
+      fig.hidden = false;
+      fig.classList.add('none');
+      cap.textContent = p.failed ? 'The photo could not be loaded right now.' : 'No photo of this ship on Wikimedia Commons yet.';
+    };
+    if (!p.photo) { none(); return; }
+    img.onload = () => { fig.hidden = false; fig.classList.remove('none'); };
+    img.onerror = () => { if (p.full && img.src !== p.full) img.src = p.full; else none(); };
     img.src = p.photo;
     img.alt = `Photo of ${e.name || 'the ship'}`;
     fig.querySelector('a').href = p.page || p.photo;
-    fig.querySelector('figcaption').textContent = `Photo: ${[p.author, p.license].filter(Boolean).join(', ') || 'Wikimedia Commons'} · Wikimedia Commons`;
+    cap.textContent = `${p.match === 'name' ? 'Found by name, may show a namesake · ' : ''}Photo: ${[p.author, p.license].filter(Boolean).join(', ') || 'Wikimedia Commons'} · Wikimedia Commons`;
   });
 }
 

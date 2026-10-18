@@ -7,7 +7,7 @@
 // GET /api/health?check=1    also opens a test connection to aisstream.io and says what happened.
 // GET /api/search?q=genoa    ports and places matching a name (Photon / OpenStreetMap), to fly the map there.
 // GET /api/where             the visitor's country, to open the map there.
-// GET /api/photo?imo=9811000 a photo of the ship from Wikimedia Commons, when one exists, with its credit.
+// GET /api/photo?imo=9811000&name=EVER%20GIVEN   a photo of the ship from Wikimedia Commons, with its credit.
 
 const UPSTREAM = 'https://stream.aisstream.io/v0/stream';
 const AIS_TYPES = ['PositionReport', 'StandardClassBPositionReport', 'ExtendedClassBPositionReport', 'ShipStaticData', 'StaticDataReport'];
@@ -184,29 +184,42 @@ const IMAGE_INFO = '&prop=imageinfo&iiprop=url|mime|extmetadata&iiurlwidth=800&i
 
 async function photo(url, ctx) {
   const imo = (url.searchParams.get('imo') || '').trim();
-  if (!/^\d{7}$/.test(imo)) return json({ error: 'imo must be 7 digits' }, 400);
+  const name = (url.searchParams.get('name') || '').toUpperCase().replace(/[^A-Z0-9 .-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+  if (imo && !/^\d{7}$/.test(imo)) return json({ error: 'imo must be 7 digits' }, 400);
+  if (!imo && name.length < 5) return json({ error: 'give an imo number or a ship name' }, 400);
   const cache = caches.default;
-  const cacheKey = new Request(`https://cache.ship-track/photo?imo=${imo}`);
+  const cacheKey = new Request(`https://cache.ship-track/photo?imo=${imo}&name=${encodeURIComponent(name)}`);
   const hit = await cache.match(cacheKey);
   if (hit) return hit;
   const wiki = (u) => fetch(u, { headers: { 'User-Agent': WIKI_UA, Accept: 'application/json' } })
     .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Wikimedia answered ${r.status}`))));
 
-  let pages = (await wiki(`${COMMONS}&action=query&generator=categorymembers&gcmtype=file&gcmlimit=10`
+  let match = 'imo';
+  let pages = !imo ? [] : (await wiki(`${COMMONS}&action=query&generator=categorymembers&gcmtype=file&gcmlimit=10`
     + `&gcmtitle=${encodeURIComponent(`Category:IMO ${imo}`)}${IMAGE_INFO}`)).query?.pages || [];
-  if (!pages.some(isPhoto)) {
+  if (imo && !pages.some(isPhoto)) {
     const sparql = `SELECT ?img WHERE { ?ship wdt:P458 "${imo}"; wdt:P18 ?img } LIMIT 1`;
     const img = (await wiki(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`))
       .results?.bindings?.[0]?.img?.value;
     const file = img && decodeURIComponent(img.split('/Special:FilePath/')[1] || '');
     if (file) pages = (await wiki(`${COMMONS}&action=query&titles=${encodeURIComponent(`File:${file}`)}${IMAGE_INFO}`)).query?.pages || [];
   }
-  const page = pages.filter(isPhoto).sort((a, b) => a.title.localeCompare(b.title))[0];
+  // Most ships have no IMO category: look for photos whose file name carries the ship's name.
+  if (!pages.some(isPhoto) && name.length >= 5) {
+    match = 'name';
+    const found = (await wiki(`${COMMONS}&action=query&generator=search&gsrnamespace=6&gsrlimit=10`
+      + `&gsrsearch=${encodeURIComponent(`intitle:"${name}" filetype:bitmap`)}${IMAGE_INFO}`)).query?.pages || [];
+    const words = new RegExp(`(^|[^A-Z0-9])${name.replace(/[.-]/g, '\\$&').replace(/ /g, '[ _-]+')}([^A-Z0-9]|$)`);
+    pages = found.filter((pg) => words.test(pg.title.toUpperCase()));
+  }
+  const page = pages.filter(isPhoto).sort((a, b) => (a.index ?? 0) - (b.index ?? 0) || a.title.localeCompare(b.title))[0];
   const info = page?.imageinfo?.[0];
   const meta = info?.extmetadata || {};
   const body = info ? {
     photo: info.thumburl || info.url,
+    full: info.url,
     page: info.descriptionurl,
+    match,
     author: stripTags(meta.Artist?.value) || null,
     license: meta.LicenseShortName?.value || null,
   } : { photo: null };
