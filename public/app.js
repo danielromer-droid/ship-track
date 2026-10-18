@@ -1116,6 +1116,7 @@ function renderPanel() {
       <h2 class="title">${esc(e.name || `MMSI ${e.mmsi}`)}</h2>
       <div class="route">${flagImg(f)}<span>${esc([f?.name, typeLabel(e.type)].filter(Boolean).join(' · '))}</span></div>
     </div>
+    <figure class="photo" id="photo" hidden><a target="_blank" rel="noopener"><img alt=""></a><figcaption></figcaption></figure>
     <div class="cards">
       <div class="card"><small>Speed</small><b id="speed">–</b><em id="speed-kmh"></em></div>
       <div class="card"><small>Course</small><b id="course">–</b><em id="heading"></em></div>
@@ -1133,6 +1134,7 @@ function renderPanel() {
       <button type="button" class="btn more" id="more">${expanded ? 'Fewer details' : 'All details'}</button>
     </div>
     <section class="details"><h3>Ship</h3><dl id="facts"></dl></section>
+    ${state.mode === 'live' ? `<a class="photos-link" href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:${e.mmsi}" target="_blank" rel="noopener">More photos and voyage details on MarineTraffic ↗</a>` : ''}
     <p class="note">${state.mode === 'demo' ? 'Simulated ship: real ships appear once the app runs on Cloudflare with an aisstream.io key.'
       : 'AIS data from <a href="https://aisstream.io">aisstream.io</a>. The solid line is where the ship went since you opened the map; AIS does not say where a voyage started. The dashed line is an estimated sea route to the destination the crew entered.'}</p>`;
 
@@ -1142,14 +1144,34 @@ function renderPanel() {
   const toggle = () => { panel.classList.toggle('expanded'); renderPanel(); keepShipVisible(); };
   $('#more').onclick = toggle;
   $('#handle').onclick = toggle;
-  panel.dataset.key = `${e.mmsi}|${e.name}|${e.type}`;
+  panel.dataset.key = `${e.mmsi}|${e.name}|${e.type}|${e.imo}`;
+  showPhoto(e);
   tickPanel(e);
+}
+
+// A photo of the ship from Wikimedia Commons, looked up by its IMO number.
+const photos = new Map();
+function showPhoto(e) {
+  if (state.mode !== 'live' || !e.imo) return;
+  if (!photos.has(e.imo)) {
+    photos.set(e.imo, fetchJson(`/api/photo?imo=${e.imo}`).catch(() => { photos.delete(e.imo); return { photo: null }; }));
+  }
+  photos.get(e.imo).then((p) => {
+    const fig = $('#photo');
+    if (!p.photo || !fig || state.selected !== e.mmsi) return;
+    const img = fig.querySelector('img');
+    img.onload = () => { fig.hidden = false; };
+    img.src = p.photo;
+    img.alt = `Photo of ${e.name || 'the ship'}`;
+    fig.querySelector('a').href = p.page || p.photo;
+    fig.querySelector('figcaption').textContent = `Photo: ${[p.author, p.license].filter(Boolean).join(', ') || 'Wikimedia Commons'} · Wikimedia Commons`;
+  });
 }
 
 // Live numbers in the panel, refreshed without re-rendering it.
 function tickPanel(e) {
   if (panel.hidden || !$('#speed')) return;
-  if (panel.dataset.key !== `${e.mmsi}|${e.name}|${e.type}`) { renderPanel(); return; }
+  if (panel.dataset.key !== `${e.mmsi}|${e.name}|${e.type}|${e.imo}`) { renderPanel(); return; }
   const now = Date.now();
   const age = now - e.t;
   const live = state.mode === 'live' ? age < STALE_MS : true;
@@ -1160,7 +1182,8 @@ function tickPanel(e) {
   $('#speed-kmh').textContent = e.sog != null ? `${num(e.sog * 1.852, 0)} km/h` : '';
   $('#course').innerHTML = e.cog != null ? `${num(e.cog)}°<span> ${compass(e.cog)}</span>` : '–';
   $('#heading').textContent = e.hdg != null ? `heading ${num(e.hdg)}°` : '';
-  $('#dest').textContent = e.dest || 'Not reported';
+  // Names and destinations come in a separate message every 6 minutes, so a ship can be on the map before them.
+  $('#dest').textContent = e.dest || (e.name ? 'Not reported' : 'Not received yet');
   const t = etaMs(e.eta);
   const p = plan?.mmsi === e.mmsi ? plan : null;
   const ok = p?.status === 'ok' && p.nm != null;
@@ -1168,7 +1191,8 @@ function tickPanel(e) {
   const guess = !t && ok && e.sog >= 1 ? now + (p.nm / e.sog) * 3_600_000 : null;
   $('#countdown').textContent = t ? until(t) : guess ? `≈ ${until(guess)}` : '';
   $('#eta').textContent = t ? fmtTime(t) : guess ? 'at this speed' : '';
-  $('#dest-to').textContent = !e.dest ? '' : ok ? `${p.place.name}${p.place.cc ? `, ${p.place.cc}` : ''} · ${num(p.nm)} nm to go`
+  $('#dest-to').textContent = !e.dest ? (e.name ? 'The crew left it blank, so no route' : 'Ships send it every 6 minutes; the route appears then')
+    : ok ? `${p.place.name}${p.place.cc ? `, ${p.place.cc}` : ''} · ${num(p.nm)} nm to go`
     : p?.status === 'loading' ? 'Finding the port…' : p?.status === 'none' ? 'Port not found, so no route' : '';
   $('#dest-box').disabled = !ok;
   const [lat, lon] = posNow(e, now);

@@ -1,6 +1,6 @@
 // Makes the app installable and opens it instantly: the page shell is served
 // from cache and refreshed in the background. Ship data always comes from the network.
-const CACHE = 'ship-track-v3';
+const CACHE = 'ship-track-v4';
 const SHELL = ['/', '/style.css', '/app.js', '/icons/icon.svg', '/icons/icon-180.png', '/icons/icon-192.png', '/icons/icon-512.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
