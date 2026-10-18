@@ -69,6 +69,7 @@ async function probe(url, key) {
       let m = null;
       try { m = JSON.parse(text); } catch {}
       if (m && m.error) done({ result: "rejected", detail: m.error });
+      else if (m && m.MessageType === "SubscriptionConfirmation") return; // key accepted; wait for a ship
       else done({ result: "working", firstMessage: m ? m.MessageType : text.slice(0, 80) });
     });
     ws.addEventListener("close", (ev) => done({ result: "closed", detail: `code ${ev.code} ${ev.reason || ""}`.trim() }));
