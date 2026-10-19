@@ -1055,7 +1055,11 @@ function connect() {
     if (!state.lastError && ev.reason && ev.reason !== 'bye') state.lastError = ev.reason;
     if (document.hidden) return;
     const keyBad = /key/i.test(state.lastError || '');
-    const wait = keyBad ? 60_000 : Math.min(30_000, 2000 * 2 ** retry++);
+    const first = retry === 0 && !keyBad;
+    const wait = keyBad ? 60_000 : first ? 500 : Math.min(30_000, 2000 * 2 ** retry);
+    retry++;
+    // A single drop (the site updating, a network blip) reconnects at once without an alarm.
+    if (first) { setStatus('Live · reconnecting…'); retryTimer = setTimeout(connect, wait); return; }
     setStatus(keyBad ? 'aisstream.io rejected the API key · check the Cloudflare secret'
       : `Feed interrupted, reconnecting${state.lastError ? ` (${state.lastError})` : ''}`, 'error');
     retryTimer = setTimeout(connect, wait);
