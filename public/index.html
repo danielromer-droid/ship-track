@@ -33,6 +33,9 @@
     <div class="search" role="search">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
       <input id="q" type="search" autocomplete="off" placeholder="Ship, MMSI, IMO or port" aria-label="Search a ship name, MMSI, IMO number or a port" aria-controls="results">
+      <button type="button" id="q-clear" class="q-clear" aria-label="Clear the search" hidden>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
       <kbd>/</kbd>
       <ul id="results" class="results" hidden></ul>
     </div>
@@ -61,6 +64,8 @@
         </button>
       </div>
       <button type="button" id="pointing" class="pointing" hidden title="Fly to this ship"></button>
+      <div id="hunt" class="pointing hunt" role="status" hidden><span></span><button type="button" id="hunt-stop" aria-label="Stop looking">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
       <div id="weather" class="weather" aria-live="polite" hidden></div>
       <div id="status" class="status" role="status">Connecting to ships…</div>
     </main>

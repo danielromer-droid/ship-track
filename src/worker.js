@@ -10,6 +10,9 @@
 // GET /api/extra?box=s,w,n,e ships from extra open feeds (Finland's Digitraffic, Baltic Sea) in that area,
 //                            as aisstream.io-shaped messages so the page handles them the same way.
 // GET /api/photo?imo=9811000&name=EVER%20GIVEN   a photo of the ship, with the photographer's credit when needed.
+// GET /api/ship?imo=9811000  { mmsi, name } of a ship known by its IMO number (Wikidata), to look for it worldwide.
+//
+// /api/stream also takes {"boxes": [...], "mmsi": [235000000]}: only those ships, used to find one anywhere.
 
 const UPSTREAM = 'https://stream.aisstream.io/v0/stream';
 const AIS_TYPES = ['PositionReport', 'StandardClassBPositionReport', 'ExtendedClassBPositionReport', 'ShipStaticData', 'StaticDataReport'];
@@ -22,6 +25,7 @@ export default {
       if (url.pathname === '/api/health') return await health(url, env);
       if (url.pathname === '/api/search') return await search(url, ctx);
       if (url.pathname === '/api/where') return where(request);
+      if (url.pathname === '/api/ship') return shipByImo(url);
       if (url.pathname === '/api/extra') return await extra(url, ctx);
       if (url.pathname === '/api/photo') return await photo(url, ctx);
     } catch (err) {
@@ -86,7 +90,8 @@ function stream(request, env, ctx) {
     try { m = JSON.parse(typeof ev.data === 'string' ? ev.data : new TextDecoder().decode(ev.data)); } catch { return; } // the page sends text
     const boxes = cleanBoxes(m?.boxes);
     if (!boxes) return;
-    pending = JSON.stringify({ APIKey: key, BoundingBoxes: boxes, FilterMessageTypes: AIS_TYPES });
+    const mmsi = Array.isArray(m.mmsi) ? m.mmsi.map(String).filter((v) => /^\d{9}$/.test(v)).slice(0, 50) : [];
+    pending = JSON.stringify({ APIKey: key, BoundingBoxes: boxes, FilterMessageTypes: AIS_TYPES, ...(mmsi.length ? { FiltersShipMMSI: mmsi } : {}) });
     if (up) {
       try { up.send(pending); } catch { close(1011, 'upstream gone'); }
     } else if (!connecting) {
@@ -110,6 +115,28 @@ function cleanBoxes(boxes) {
     out.push(p.map((c) => c.map((v) => Math.round(v * 100) / 100)));
   }
   return out;
+}
+
+// ---------- a ship's MMSI from its IMO number ----------
+
+async function shipByImo(url) {
+  const imo = url.searchParams.get('imo') || '';
+  if (!/^\d{7}$/.test(imo)) return json({ error: 'imo must be 7 digits' }, 400);
+  const cache = caches.default;
+  const cacheKey = new Request(`https://cache.ship-track/ship/v1?imo=${imo}`);
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+  const sparql = `SELECT ?mmsi ?name WHERE { ?s wdt:P458 "${imo}". OPTIONAL { ?s wdt:P587 ?mmsi }
+    OPTIONAL { ?s rdfs:label ?name FILTER(LANG(?name) = "en") } } LIMIT 1`;
+  const r = await fetch(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`,
+    { headers: { 'User-Agent': WIKI_UA, Accept: 'application/sparql-results+json' } });
+  if (!r.ok) return json({ error: `ship lookup answered ${r.status}` }, 502);
+  const row = (await r.json()).results?.bindings?.[0] || {};
+  const mmsi = /^\d{9}$/.test(row.mmsi?.value || '') ? +row.mmsi.value : null;
+  const res = json({ imo: +imo, mmsi, name: row.name?.value || null });
+  res.headers.set('Cache-Control', `public, max-age=${mmsi ? 86_400 : 3600}`);
+  await cache.put(cacheKey, res.clone());
+  return res;
 }
 
 // ---------- health check ----------

@@ -111,6 +111,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .search:focus-within { border-color: var(--accent); }
 .search input { flex: 1; width: 0; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 16px; color: var(--ink); outline: none; }
+.search input::-webkit-search-cancel-button { display: none; }
+.q-clear { flex: none; width: 32px; height: 32px; margin-right: -6px; border: 0; border-radius: 16px; background: var(--surface-2); color: var(--ink); display: grid; place-items: center; cursor: pointer; }
+.q-clear[hidden] { display: none; }
+.q-clear:not([hidden]) ~ kbd { display: none; }
 .search kbd { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
 .results {
   position: absolute; top: 50px; left: 0; right: 0; margin: 0; padding: 6px; list-style: none;
@@ -193,6 +197,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: var(--surface); box-shadow: var(--shadow); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pointing[hidden] { display: none; }
+.hunt { display: flex; align-items: center; gap: 10px; height: auto; min-height: 40px; padding: 6px 6px 6px 16px; white-space: normal; z-index: 3; }
+.hunt span { flex: 1; }
+.hunt button { flex: none; width: 30px; height: 30px; border: 0; border-radius: 15px; background: var(--surface-2); color: var(--ink); display: grid; place-items: center; }
 .pointing b { font-family: var(--mono); }
 .me-beam { width: 160px; height: 160px; pointer-events: none; }
 .me-beam svg { display: block; width: 100%; height: 100%; }

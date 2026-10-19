@@ -31,6 +31,11 @@ jobs:
         run: |
           curl -sS "${{ inputs.site }}/api/extra?box=59,22,61,27" -o extra.json -w '%{http_code}\n'
           echo "::notice title=site extra::$(jq -c '{n: (.messages|length), types: ([.messages[].MessageType] | group_by(.) | map({(.[0]): length}) | add), sample: .messages[1]}' extra.json | head -c 1500)"
+      - name: Ship lookup by IMO
+        run: |
+          for imo in 9866689 9811000; do
+            echo "::notice title=ship $imo::$(curl -sS "${{ inputs.site }}/api/ship?imo=$imo" | head -c 500)"
+          done
       - name: Extra free feeds
         run: |
           dt='https://meri.digitraffic.fi/api/ais/v1'
