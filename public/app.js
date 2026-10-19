@@ -801,8 +801,9 @@ async function lookUpPort(text, at) {
   const words = s.split(' ');
   const tried = [words.join(' ')];
   const clean = words.filter((w) => !DEST_NOISE.has(w));
+  // Longest names first; among equal lengths the last one wins, as in "DOVER-DUNKERQUE".
   for (let len = clean.length; len >= 1; len--) {
-    for (let i = 0; i + len <= clean.length; i++) tried.push(clean.slice(i, i + len).join(' '));
+    for (let i = clean.length - len; i >= 0; i--) tried.push(clean.slice(i, i + len).join(' '));
   }
   let hit = P.names.get(tried[0]) && nearest(P.names.get(tried[0]));
   if (!hit) {
@@ -868,11 +869,13 @@ function routeLine(p) {
       const s = 6 * d[i] + tree.dist[i];
       if (s < score) { score = s; best = i; }
     }
-    if (best >= 0 && d[best] + tree.dist[best] + goalKm < direct * 8) {
+    const lanes = best >= 0 ? d[best] + tree.dist[best] + goalKm : Infinity;
+    // Close to port the lanes are coarse; go straight unless that is far shorter than sailing them.
+    if (lanes < direct * 8 && !(direct < 100 && lanes > direct * 1.5)) {
       coords = [[lon, lat]];
       for (let v = best; v >= 0; v = v === goal ? -1 : tree.prev[v]) coords.push([g.lon[v], g.lat[v]]);
       coords.push([place.lon, place.lat]);
-      total = d[best] + tree.dist[best] + goalKm;
+      total = lanes;
     }
   }
   for (let i = 1; i < coords.length; i++) { // keep the line continuous across the date line
@@ -1201,13 +1204,14 @@ function tickPanel(e) {
   const t = etaMs(e.eta);
   const p = plan?.mmsi === e.mmsi ? plan : null;
   const ok = p?.status === 'ok' && p.nm != null;
+  if (ok) $('#dest').textContent = `${p.place.name}${p.place.cc ? `, ${p.place.cc}` : ''}`;
   // Without an ETA from the crew, estimate one from the distance left at the current speed.
   const guess = !t && ok && e.sog >= 1 ? now + (p.nm / e.sog) * 3_600_000 : null;
   $('#countdown').textContent = t ? until(t) : guess ? `≈ ${until(guess)}` : '';
   $('#eta').textContent = t ? fmtTime(t) : guess ? 'at this speed' : '';
   $('#dest-to').textContent = !e.dest ? (e.name ? 'The crew left it blank, so no route' : 'Ships send it every 6 minutes; the route appears then')
-    : ok ? `${p.place.name}${p.place.cc ? `, ${p.place.cc}` : ''} · ${num(p.nm)} nm to go`
-    : p?.status === 'loading' ? 'Finding the port…' : p?.status === 'none' ? 'Port not found, so no route' : '';
+    : ok ? `${num(p.nm)} nm to go · crew typed “${e.dest}”`
+    : p?.status === 'loading' ? 'Finding the port…' : p?.status === 'none' ? 'As typed by the crew; not a port we know, so no route' : '';
   $('#dest-box').disabled = !ok;
   const [lat, lon] = posNow(e, now);
   const len = e.dim ? e.dim[0] + e.dim[1] : null, beam = e.dim ? e.dim[2] + e.dim[3] : null;
