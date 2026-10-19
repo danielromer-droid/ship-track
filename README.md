@@ -50,6 +50,7 @@ Every push to `main` then redeploys. With the command line instead: `npm install
 | What | Source used | Cost | Notes |
 |---|---|---|---|
 | Ship positions, names, types, destinations | [aisstream.io](https://aisstream.io) | Free, needs a key | Built from terrestrial AIS stations run by volunteers. Coverage is excellent along most coasts, busy straits and ports (Europe, North America, East Asia), thin or absent in the open ocean, where only satellite AIS (paid) sees ships. The service is offered as is, with no uptime promise. |
+| More ships in the Baltic | [Fintraffic Digitraffic](https://www.digitraffic.fi/en/marine-traffic/) | Free, no key, CC BY 4.0 | Finnish coast stations: about 1,000 ships from the Gulf of Finland to the Bothnian Bay, refreshed every 30 s. |
 | Map | [OpenFreeMap](https://openfreemap.org) (OpenStreetMap) | Free, no key | Same base map as TrainLive. Satellite imagery from Esri. |
 | Weather, waves | [Open-Meteo](https://open-meteo.com), [RainViewer](https://www.rainviewer.com) | Free, no key | Fetched by the browser only when the weather button is on. |
 | Port search | [Photon](https://photon.komoot.io) (OpenStreetMap) | Free, no key | Cached for a day by the Worker. |

@@ -7,6 +7,8 @@
 // GET /api/health?check=1    also opens a test connection to aisstream.io and says what happened.
 // GET /api/search?q=genoa    ports and places matching a name (Photon / OpenStreetMap), to fly the map there.
 // GET /api/where             the visitor's country, to open the map there.
+// GET /api/extra?box=s,w,n,e ships from extra open feeds (Finland's Digitraffic, Baltic Sea) in that area,
+//                            as aisstream.io-shaped messages so the page handles them the same way.
 // GET /api/photo?imo=9811000&name=EVER%20GIVEN   a photo of the ship, with the photographer's credit when needed.
 
 const UPSTREAM = 'https://stream.aisstream.io/v0/stream';
@@ -20,6 +22,7 @@ export default {
       if (url.pathname === '/api/health') return await health(url, env);
       if (url.pathname === '/api/search') return await search(url, ctx);
       if (url.pathname === '/api/where') return where(request);
+      if (url.pathname === '/api/extra') return await extra(url, ctx);
       if (url.pathname === '/api/photo') return await photo(url, ctx);
     } catch (err) {
       return json({ error: err.message }, 502);
@@ -260,6 +263,59 @@ function photographer(text) {
 function stripTags(html) {
   return String(html || '').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
     .replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
+// ---------- extra open feeds ----------
+// Fintraffic's Digitraffic publishes every ship its Baltic coast stations hear, free and without a
+// key (CC BY 4.0). Positions are cached for 20 s and ship details for 10 min, for all visitors.
+
+const DIGITRAFFIC = 'https://meri.digitraffic.fi/api/ais/v1';
+const DIGITRAFFIC_AREA = [57, 15, 67, 34]; // s, w, n, e
+
+async function cachedJson(ctx, url, seconds) {
+  const cache = caches.default;
+  const key = new Request(`https://cache.ship-track/extra?u=${encodeURIComponent(url)}`);
+  const hit = await cache.match(key);
+  if (hit) return hit.json();
+  const res = await fetch(url, { headers: { 'Digitraffic-User': 'ship-track', 'Accept-Encoding': 'gzip' } });
+  if (!res.ok) throw new Error(`Digitraffic answered ${res.status}`);
+  const text = await res.text();
+  ctx.waitUntil(cache.put(key, new Response(text, { headers: { 'Cache-Control': `public, max-age=${seconds}` } })));
+  return JSON.parse(text);
+}
+
+async function extra(url, ctx) {
+  const box = (url.searchParams.get('box') || '').split(',').map(Number);
+  if (box.length !== 4 || box.some((v) => !Number.isFinite(v))) return json({ error: 'box must be s,w,n,e' }, 400);
+  const [s, w, n, e] = box;
+  const [as, aw, an, ae] = DIGITRAFFIC_AREA;
+  if (n < as || s > an || (w <= e && (e < aw || w > ae))) return json({ messages: [] }, 200, { 'Cache-Control': 'public, max-age=20' });
+  const inside = (lat, lon) => lat >= s && lat <= n && (w <= e ? lon >= w && lon <= e : lon >= w || lon <= e);
+  const [locations, vessels] = await Promise.all([
+    cachedJson(ctx, `${DIGITRAFFIC}/locations`, 20),
+    cachedJson(ctx, `${DIGITRAFFIC}/vessels`, 600),
+  ]);
+  const details = new Map((Array.isArray(vessels) ? vessels : []).map((v) => [v.mmsi, v]));
+  const utc = (ms) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+  const messages = [];
+  for (const f of locations.features || []) {
+    const p = f.properties || {};
+    const [lon, lat] = f.geometry?.coordinates || [];
+    if (!p.mmsi || !inside(lat, lon) || !p.timestampExternal) continue;
+    const v = details.get(p.mmsi);
+    const MetaData = { MMSI: p.mmsi, ShipName: v?.name || '', latitude: lat, longitude: lon, time_utc: utc(p.timestampExternal) };
+    messages.push({ MessageType: 'PositionReport', MetaData, Message: { PositionReport: {
+      Latitude: lat, Longitude: lon, Sog: p.sog, Cog: p.cog, TrueHeading: p.heading, NavigationalStatus: p.navStat } } });
+    if (v) {
+      const eta = v.eta || 0;
+      messages.push({ MessageType: 'ShipStaticData', MetaData: { ...MetaData, time_utc: utc(v.timestamp || p.timestampExternal) }, Message: { ShipStaticData: {
+        Name: v.name, CallSign: v.callSign, ImoNumber: v.imo, Type: v.shipType, Destination: v.destination,
+        Dimension: { A: v.referencePointA, B: v.referencePointB, C: v.referencePointC, D: v.referencePointD },
+        MaximumStaticDraught: v.draught ? v.draught / 10 : 0,
+        Eta: { Month: (eta >> 16) & 15, Day: (eta >> 11) & 31, Hour: (eta >> 6) & 31, Minute: eta & 63 } } } });
+    }
+  }
+  return json({ messages, source: 'Digitraffic' }, 200, { 'Cache-Control': 'public, max-age=20' });
 }
 
 function where(request) {

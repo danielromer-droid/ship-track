@@ -27,6 +27,10 @@ jobs:
           ua='ship-track/1.0 (https://github.com/danielromer-droid/ship-track)'
           echo "::notice title=commons::$(curl -sS -w ' [%{http_code}]' -A "$ua" "https://commons.wikimedia.org/w/api.php?format=json&formatversion=2&action=query&generator=categorymembers&gcmtype=file&gcmlimit=3&gcmtitle=Category:IMO%209811000&prop=imageinfo&iiprop=url|mime&iiurlwidth=800" | head -c 900)"
           echo "::notice title=wikidata::$(curl -sS -w ' [%{http_code}]' -A "$ua" -G "https://query.wikidata.org/sparql" --data-urlencode 'format=json' --data-urlencode 'query=SELECT ?img WHERE { ?ship wdt:P458 "9811000"; wdt:P18 ?img } LIMIT 1' | tr -d '\n' | head -c 600)"
+      - name: Extra feeds through the site
+        run: |
+          curl -sS "${{ inputs.site }}/api/extra?box=59,22,61,27" -o extra.json -w '%{http_code}\n'
+          echo "::notice title=site extra::$(jq -c '{n: (.messages|length), types: ([.messages[].MessageType] | group_by(.) | map({(.[0]): length}) | add), sample: .messages[1]}' extra.json | head -c 1500)"
       - name: Extra free feeds
         run: |
           dt='https://meri.digitraffic.fi/api/ais/v1'

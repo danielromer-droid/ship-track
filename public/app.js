@@ -196,7 +196,7 @@ const map = new maplibregl.Map({
   pitchWithRotate: false,
   touchPitch: false,
   attributionControl: { compact: true, customAttribution: [
-    'Ships: <a href="https://aisstream.io">aisstream.io</a>',
+    'Ships: <a href="https://aisstream.io">aisstream.io</a>, <a href="https://www.digitraffic.fi/en/">Fintraffic / digitraffic.fi</a> (CC BY 4.0)',
     'Weather: <a href="https://open-meteo.com">Open-Meteo</a>, <a href="https://www.rainviewer.com">RainViewer</a>',
   ] },
 });
@@ -1061,6 +1061,22 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) hideTimer = setTimeout(() => ws?.close(1000, 'hidden'), 60_000);
   else connect();
 });
+// Extra open feeds (the Baltic, from Finland's Digitraffic), asked for every 30 s while in view.
+const EXTRA_AREAS = [[57, 15, 67, 34]];
+let extraBusy = false;
+async function pollExtra() {
+  if (state.mode !== 'live' || document.hidden || extraBusy) return;
+  const [[[s, w], [n, e]]] = boxesForView().length === 1 ? boxesForView() : [[[-90, -180], [90, 180]]];
+  if (!EXTRA_AREAS.some(([as, aw, an, ae]) => n >= as && s <= an && e >= aw && w <= ae)) return;
+  extraBusy = true;
+  try {
+    const { messages = [] } = await fetchJson(`/api/extra?box=${[s, w, n, e].map((v) => v.toFixed(2)).join(',')}`);
+    for (const m of messages) { state.msgs++; onAis(m); }
+  } catch { /* the main feed carries on */ } finally { extraBusy = false; }
+}
+setInterval(pollExtra, 30_000);
+map.on('moveend', () => { clearTimeout(pollExtra.t); pollExtra.t = setTimeout(pollExtra, 1500); });
+
 let lastMsgs = 0, lastRateAt = Date.now();
 setInterval(() => {
   const now = Date.now();
@@ -1227,7 +1243,7 @@ function renderPanel() {
     <section class="details"><h3>Ship</h3><dl id="facts"></dl></section>
     ${state.mode === 'live' ? `<a class="photos-link" href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:${e.mmsi}" target="_blank" rel="noopener">More photos and voyage details on MarineTraffic ↗</a>` : ''}
     <p class="note">${state.mode === 'demo' ? 'Simulated ship: real ships appear once the app runs on Cloudflare with an aisstream.io key.'
-      : 'AIS data from <a href="https://aisstream.io">aisstream.io</a>. The solid line is where the ship went since you opened the map; AIS does not say where a voyage started. The dashed line is an estimated sea route to the destination the crew entered.'}</p>`;
+      : 'AIS data from <a href="https://aisstream.io">aisstream.io</a> and, in the Baltic, Fintraffic / digitraffic.fi (CC BY 4.0). The solid line is where the ship went since you opened the map; AIS does not say where a voyage started. The dashed line is an estimated sea route to the destination the crew entered.'}</p>`;
 
   $('#close').onclick = deselect;
   $('#dest-box').onclick = showRoute;
@@ -1670,7 +1686,8 @@ setInterval(draw, 1000);
   if (health?.live) {
     state.mode = 'live';
     loadShips();
-    if (map.loaded()) connect(); else map.once('load', connect);
+    const go = () => { connect(); pollExtra(); };
+    if (map.loaded()) go(); else map.once('load', go);
   } else {
     startDemo(health ? 'add your aisstream.io key on Cloudflare for real ships' : 'deploy to Cloudflare for real ships');
   }
