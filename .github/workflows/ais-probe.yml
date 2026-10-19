@@ -11,6 +11,9 @@ on:
       box:
         description: Area as south,west,north,east
         default: 50.5,0.8,51.4,2.6
+      mmsi:
+        description: Only this MMSI, anywhere in the world (leave empty to use ship and box)
+        default: ''
       minutes:
         description: How long to listen
         default: '8'
@@ -28,6 +31,7 @@ jobs:
       - name: Listen
         env:
           SHIP: ${{ inputs.ship }}
+          MMSI: ${{ inputs.mmsi }}
           BOX: ${{ inputs.box }}
           MINUTES: ${{ inputs.minutes }}
           SITE: ${{ inputs.site }}
@@ -41,11 +45,17 @@ jobs:
           ws.binaryType = 'arraybuffer';
           ws.onerror = (err) => console.log('::warning::socket error ' + (err.message || ''));
           ws.onclose = (ev) => console.log(`::warning::socket closed ${ev.code} ${ev.reason}`);
-          ws.onopen = () => ws.send(JSON.stringify({ boxes: [[[s, w], [n, e]]] }));
+          const only = +process.env.MMSI || 0;
+          let hits = 0;
+          ws.onopen = () => ws.send(JSON.stringify(only ? { boxes: [[[-90, -180], [90, 180]]], mmsi: [only] } : { boxes: [[[s, w], [n, e]]] }));
           ws.onmessage = (ev) => {
             const m = JSON.parse(typeof ev.data === 'string' ? ev.data : new TextDecoder().decode(ev.data));
             if (m.error) console.log('::warning::' + m.error);
             count++;
+            if (only) {
+              if (m.MetaData?.MMSI === only && hits++ < 8) console.log(`::notice title=${only} ${m.MessageType}::${JSON.stringify(m.MetaData).slice(0, 400)}`);
+              return;
+            }
             const name = (m.MetaData?.ShipName || '').trim().toUpperCase();
             const body = m.Message?.ShipStaticData;
             if (body) { statics++; if (dests.size < 40) dests.set(name, body.Destination); }
@@ -56,7 +66,8 @@ jobs:
             console.log(`::notice title=${name} (${m.MetaData.MMSI})::Destination=${JSON.stringify(body.Destination)} ETA=${JSON.stringify(body.Eta)} IMO=${body.ImoNumber}`);
           };
           setTimeout(() => {
-            if (!seen.size) console.log(`::notice title=nothing::No static message from ${want} in ${process.env.MINUTES} min`);
+            if (only && !hits) console.log(`::notice title=nothing::No message from MMSI ${only} anywhere in ${process.env.MINUTES} min`);
+            if (!only && !seen.size) console.log(`::notice title=nothing::No static message from ${want} in ${process.env.MINUTES} min`);
             console.log(`::notice title=totals::${count} messages, ${statics} static messages`);
             console.log(`::notice title=sample destinations::${[...dests].map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' | ')}`);
             process.exit(0);

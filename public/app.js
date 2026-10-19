@@ -1465,7 +1465,7 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.search')) re
 async function search() {
   const text = q.value.trim();
   if (text.length < 2) { results.hidden = true; return; }
-  const needle = text.toUpperCase().replace(/^IMO\s*/, '').replace(/\s+/g, ' ');
+  const needle = text.toUpperCase().replace(/^(IMO|MMSI)[\s:#]*/, '').replace(/\s+/g, ' ');
   const ships = [];
   for (const e of state.ships.values()) {
     if (e.lat == null) continue;
