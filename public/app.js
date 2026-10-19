@@ -916,7 +916,9 @@ async function lookUpPort(text, at) {
   }
   // Not a port we know: ask the place search, and keep the answer closest to the ship.
   const { places = [] } = await fetchJson(`/api/search?q=${encodeURIComponent(clean.join(' ') || s)}`);
-  const p = places.sort((a, b) => km(at[0], at[1], a.lat, a.lon) - km(at[0], at[1], b.lat, b.lon))[0];
+  // Free text matches all sorts of places ("FRANK" is a village), so only trust a port, or a place close to the ship.
+  const p = places.filter((q) => q.port || km(at[0], at[1], q.lat, q.lon) < 300)
+    .sort((a, b) => km(at[0], at[1], a.lat, a.lon) - km(at[0], at[1], b.lat, b.lon))[0];
   return p && km(at[0], at[1], p.lat, p.lon) < 8000 ? { name: p.name, cc: p.cc, lat: p.lat, lon: p.lon } : null;
 }
 
