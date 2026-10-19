@@ -197,7 +197,7 @@ async function photo(url, ctx) {
   if (imo && !/^\d{7}$/.test(imo)) return json({ error: 'imo must be 7 digits' }, 400);
   if (!imo && name.length < 5) return json({ error: 'give an imo number or a ship name' }, 400);
   const cache = caches.default;
-  const cacheKey = new Request(`https://cache.ship-track/photo/v2?imo=${imo}&name=${encodeURIComponent(name)}`);
+  const cacheKey = new Request(`https://cache.ship-track/photo/v3?imo=${imo}&name=${encodeURIComponent(name)}`);
   const hit = await cache.match(cacheKey);
   if (hit) return hit;
   const wiki = (u) => fetch(u, { headers: { 'User-Agent': WIKI_UA, Accept: 'application/json' } })
@@ -226,7 +226,7 @@ async function photo(url, ctx) {
   const info = page?.imageinfo?.[0];
   const meta = info?.extmetadata || {};
   const license = meta.LicenseShortName?.value || '';
-  const author = stripTags(meta.Artist?.value);
+  const author = photographer(stripTags(meta.Artist?.value));
   const body = info ? {
     photo: info.thumburl || info.url,
     full: info.url,
@@ -248,6 +248,13 @@ function isShipPhoto(page) {
   const cats = (page.categories || []).map((c) => c.title);
   if (!cats.some((c) => SHIP_CATEGORY.test(c))) return false;
   return !NOT_OUTSIDE_VIEW.test(page.title.replace(/^File:/, '')) && !cats.some((c) => NOT_OUTSIDE_CATEGORY.test(c));
+}
+
+// Just the photographer's name: credits often add who uploaded it, and where.
+function photographer(text) {
+  return text.split(/\b(?:uploaded|released|via|from (?:the )?\w*wiki|wiki\w*|commons|flickr)\b/i)[0]
+    .replace(/\buser:/gi, '').replace(/^(?:work|photo|photograph)?\s*(?:from|by)\s+/i, '').replace(/^own work\b/i, '')
+    .replace(/[\s,;:.(-]+$/, '').trim();
 }
 
 function stripTags(html) {
