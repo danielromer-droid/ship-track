@@ -54,7 +54,7 @@ jobs:
             count++;
             if (count <= 2) console.log(`::notice title=message ${count}::${JSON.stringify(m).slice(0, 600)}`);
             if (only) {
-              if (list.includes(m.MetaData?.MMSI) && hits++ < 8) console.log(`::notice title=${m.MetaData.MMSI} ${m.MessageType}::${JSON.stringify(m.MetaData).slice(0, 400)}`);
+              if (list.includes(m.MetaData?.MMSI) && (hits++ < 4 || m.MessageType === 'ShipStaticData')) console.log(`::notice title=${m.MetaData.MMSI} ${m.MessageType}::${JSON.stringify(m.MessageType === 'ShipStaticData' ? m.Message.ShipStaticData : m.MetaData).slice(0, 600)}`);
               return;
             }
             const name = (m.MetaData?.ShipName || '').trim().toUpperCase();
