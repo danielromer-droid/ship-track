@@ -59,6 +59,10 @@ jobs:
             }
             const name = (m.MetaData?.ShipName || '').trim().toUpperCase();
             const body = m.Message?.ShipStaticData;
+            if (!body && name.includes(want) && !seen.has('pos' + m.MetaData.MMSI)) {
+              seen.set('pos' + m.MetaData.MMSI, 1);
+              console.log(`::notice title=${name} position (${m.MetaData.MMSI})::${m.MessageType} ${JSON.stringify(m.MetaData).slice(0, 300)}`);
+            }
             if (body) { statics++; if (dests.size < 40) dests.set(name, body.Destination); }
             if (!body || !name.includes(want)) return;
             const key = `${m.MetaData.MMSI}|${JSON.stringify(body.Destination)}`;
