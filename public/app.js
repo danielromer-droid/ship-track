@@ -1116,7 +1116,7 @@ function renderPanel() {
       <h2 class="title">${esc(e.name || `MMSI ${e.mmsi}`)}</h2>
       <div class="route">${flagImg(f)}<span>${esc([f?.name, typeLabel(e.type)].filter(Boolean).join(' · '))}</span></div>
     </div>
-
+    <figure class="photo" id="photo" hidden><div class="frame"><img alt=""></div><figcaption></figcaption></figure>
     <div class="cards">
       <div class="card"><small>Speed</small><b id="speed">–</b><em id="speed-kmh"></em></div>
       <div class="card"><small>Course</small><b id="course">–</b><em id="heading"></em></div>
@@ -1145,7 +1145,41 @@ function renderPanel() {
   $('#more').onclick = toggle;
   $('#handle').onclick = toggle;
   panel.dataset.key = `${e.mmsi}|${e.name}|${e.type}|${e.imo}`;
+  showPhoto(e);
   tickPanel(e);
+}
+
+// A photo of the ship, looked up by IMO number, else by name.
+const photos = new Map();
+function showPhoto(e) {
+  const fig = $('#photo');
+  if (!fig || state.mode !== 'live') return;
+  const name = (e.name || '').trim();
+  if (!e.imo && name.length < 5) return; // its details have not arrived yet
+  const key = `${e.imo || ''}|${name}`;
+  if (!photos.has(key)) {
+    const q = new URLSearchParams({ ...(e.imo ? { imo: e.imo } : {}), ...(name ? { name } : {}) });
+    photos.set(key, fetchJson(`/api/photo?${q}`).catch(() => { photos.delete(key); return { photo: null, failed: true }; }));
+  }
+  photos.get(key).then((p) => {
+    if (state.selected !== e.mmsi || !fig.isConnected) return;
+    const img = fig.querySelector('img'), cap = fig.querySelector('figcaption');
+    const none = () => {
+      fig.hidden = false;
+      fig.classList.add('none');
+      cap.hidden = false;
+      cap.textContent = p.failed ? 'The photo could not be loaded right now.' : 'No photo of this ship yet.';
+    };
+    if (!p.photo) { none(); return; }
+    img.onload = () => { fig.hidden = false; fig.classList.remove('none'); };
+    img.onerror = () => { if (p.full && img.src !== p.full) img.src = p.full; else none(); };
+    img.referrerPolicy = 'no-referrer';
+    img.src = p.photo;
+    img.alt = `Photo of ${e.name || 'the ship'}`;
+    const notes = [p.match === 'name' ? 'Found by name, may show a namesake' : '', p.credit ? `Photo: ${p.credit}` : ''];
+    cap.textContent = notes.filter(Boolean).join(' · ');
+    cap.hidden = !cap.textContent;
+  });
 }
 
 // Live numbers in the panel, refreshed without re-rendering it.

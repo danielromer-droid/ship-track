@@ -7,6 +7,7 @@
 // GET /api/health?check=1    also opens a test connection to aisstream.io and says what happened.
 // GET /api/search?q=genoa    ports and places matching a name (Photon / OpenStreetMap), to fly the map there.
 // GET /api/where             the visitor's country, to open the map there.
+// GET /api/photo?imo=9811000&name=EVER%20GIVEN   a photo of the ship, with the photographer's credit when needed.
 
 const UPSTREAM = 'https://stream.aisstream.io/v0/stream';
 const AIS_TYPES = ['PositionReport', 'StandardClassBPositionReport', 'ExtendedClassBPositionReport', 'ShipStaticData', 'StaticDataReport'];
@@ -19,6 +20,7 @@ export default {
       if (url.pathname === '/api/health') return await health(url, env);
       if (url.pathname === '/api/search') return await search(url, ctx);
       if (url.pathname === '/api/where') return where(request);
+      if (url.pathname === '/api/photo') return await photo(url, ctx);
     } catch (err) {
       return json({ error: err.message }, 502);
     }
@@ -170,6 +172,87 @@ async function search(url, ctx) {
   const out = json({ places }, 200, { 'Cache-Control': 'public, max-age=86400' });
   ctx.waitUntil(cache.put(cacheKey, out.clone()));
   return out;
+}
+
+// ---------- ship photos ----------
+// Photos come from the free media library behind Wikipedia, which files ships by IMO number
+// ("Category:IMO 9811000"); Wikidata also links many IMO numbers to a photo. Only real outside
+// views of ships are kept, and only public-domain or Creative Commons BY / BY-SA ones: the
+// latter need the photographer and licence named, which the page shows as plain text.
+// Answers, found or not, are cached for a week.
+
+const WIKI_UA = 'ship-track/1.0 (https://github.com/danielromer-droid/ship-track)';
+const COMMONS = 'https://commons.wikimedia.org/w/api.php?format=json&formatversion=2&origin=*';
+const IMAGE_INFO = '&prop=imageinfo|categories&clshow=!hidden&cllimit=max'
+  + '&iiprop=url|mime|size|extmetadata&iiurlwidth=800&iiextmetadatafilter=Artist|LicenseShortName';
+const SHIP_CATEGORY = /\bIMO \d{7}\b|ship|vessel|ferr(y|ies)|tanker|carrier|boat|tug|yacht|trawler|dredger|cruise|freighter|barge|liner|coaster|reefer|ro-ro|container|navy|naval/i;
+const NOT_OUTSIDE_VIEW = /interior|inside|cabin|wheelhouse|engine|lounge|restaurant|plan\b|plans\b|map|logo|emblem|crest|badge|flag|crew|captain|menu|ticket|model|drawing|diagram|poster|stamp|coin|postcard|sign\b|plaque|bell|propeller|anchor|funnel|figurehead|lifeboat|corridor|stair|atrium|theat(er|re)|pool|spa\b|casino|suite|stateroom|toilet|kitchen|galley|ceremony|christening|portrait|people|museum|screenshot|document/i;
+const NOT_OUTSIDE_CATEGORY = /interior|engine room|wheelhouse|ship bridges|bridges of ships|deck plan|cabins|crew|ship models|models of|drawings|diagrams|logos|maps\b|people/i;
+const FREE = /^(public domain|pd\b|cc0)/i;
+const CREDITED = /^cc[- ]by(-sa)?[- ]\d/i;
+
+async function photo(url, ctx) {
+  const imo = (url.searchParams.get('imo') || '').trim();
+  const name = (url.searchParams.get('name') || '').toUpperCase().replace(/[^A-Z0-9 .-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+  if (imo && !/^\d{7}$/.test(imo)) return json({ error: 'imo must be 7 digits' }, 400);
+  if (!imo && name.length < 5) return json({ error: 'give an imo number or a ship name' }, 400);
+  const cache = caches.default;
+  const cacheKey = new Request(`https://cache.ship-track/photo/v2?imo=${imo}&name=${encodeURIComponent(name)}`);
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+  const wiki = (u) => fetch(u, { headers: { 'User-Agent': WIKI_UA, Accept: 'application/json' } })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`photo search answered ${r.status}`))));
+
+  let match = 'imo';
+  let pages = !imo ? [] : (await wiki(`${COMMONS}&action=query&generator=categorymembers&gcmtype=file&gcmlimit=20`
+    + `&gcmtitle=${encodeURIComponent(`Category:IMO ${imo}`)}${IMAGE_INFO}`)).query?.pages || [];
+  if (imo && !pages.some(isShipPhoto)) {
+    const sparql = `SELECT ?img WHERE { ?ship wdt:P458 "${imo}"; wdt:P18 ?img } LIMIT 1`;
+    const img = (await wiki(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(sparql)}`))
+      .results?.bindings?.[0]?.img?.value;
+    const file = img && decodeURIComponent(img.split('/Special:FilePath/')[1] || '');
+    if (file) pages = (await wiki(`${COMMONS}&action=query&titles=${encodeURIComponent(`File:${file}`)}${IMAGE_INFO}`)).query?.pages || [];
+  }
+  // Most ships have no IMO category: look for photos whose file name carries the ship's name.
+  if (!pages.some(isShipPhoto) && name.length >= 5) {
+    match = 'name';
+    const found = (await wiki(`${COMMONS}&action=query&generator=search&gsrnamespace=6&gsrlimit=20`
+      + `&gsrsearch=${encodeURIComponent(`intitle:"${name}" filetype:bitmap`)}${IMAGE_INFO}`)).query?.pages || [];
+    const words = new RegExp(`(^|[^A-Z0-9])${name.replace(/[.-]/g, '\\$&').replace(/ /g, '[ _-]+')}([^A-Z0-9]|$)`);
+    pages = found.filter((pg) => words.test(pg.title.toUpperCase()));
+  }
+  const page = pages.filter(isShipPhoto)
+    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0) || a.title.localeCompare(b.title))[0];
+  const info = page?.imageinfo?.[0];
+  const meta = info?.extmetadata || {};
+  const license = meta.LicenseShortName?.value || '';
+  const author = stripTags(meta.Artist?.value);
+  const body = info ? {
+    photo: info.thumburl || info.url,
+    full: info.url,
+    match,
+    credit: FREE.test(license) ? null : [author, license].filter(Boolean).join(', '),
+  } : { photo: null };
+  const out = json(body, 200, { 'Cache-Control': 'public, max-age=604800' });
+  ctx.waitUntil(cache.put(cacheKey, out.clone()));
+  return out;
+}
+
+// A photo of a ship seen from outside, under a licence the page can honour.
+function isShipPhoto(page) {
+  const info = page.imageinfo?.[0];
+  if (!info || !/^image\/(jpeg|webp)$/.test(info.mime || '')) return false;
+  if (info.width < 640 || info.width < info.height * 1.2) return false; // ships are photographed side on
+  const license = info.extmetadata?.LicenseShortName?.value || '';
+  if (!FREE.test(license) && !CREDITED.test(license)) return false;
+  const cats = (page.categories || []).map((c) => c.title);
+  if (!cats.some((c) => SHIP_CATEGORY.test(c))) return false;
+  return !NOT_OUTSIDE_VIEW.test(page.title.replace(/^File:/, '')) && !cats.some((c) => NOT_OUTSIDE_CATEGORY.test(c));
+}
+
+function stripTags(html) {
+  return String(html || '').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ').trim().slice(0, 80);
 }
 
 function where(request) {
