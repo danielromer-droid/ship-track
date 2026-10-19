@@ -35,15 +35,20 @@ jobs:
           cat > probe.mjs <<'JS'
           const [s, w, n, e] = process.env.BOX.split(',').map(Number);
           const want = process.env.SHIP.toUpperCase();
-          const seen = new Map();
+          const seen = new Map(), dests = new Map();
+          let count = 0, statics = 0;
           const ws = new WebSocket(process.env.SITE.replace(/^http/, 'ws') + '/api/stream');
           ws.binaryType = 'arraybuffer';
+          ws.onerror = (err) => console.log('::warning::socket error ' + (err.message || ''));
+          ws.onclose = (ev) => console.log(`::warning::socket closed ${ev.code} ${ev.reason}`);
           ws.onopen = () => ws.send(JSON.stringify({ boxes: [[[s, w], [n, e]]] }));
           ws.onmessage = (ev) => {
             const m = JSON.parse(typeof ev.data === 'string' ? ev.data : new TextDecoder().decode(ev.data));
             if (m.error) console.log('::warning::' + m.error);
+            count++;
             const name = (m.MetaData?.ShipName || '').trim().toUpperCase();
             const body = m.Message?.ShipStaticData;
+            if (body) { statics++; if (dests.size < 40) dests.set(name, body.Destination); }
             if (!body || !name.includes(want)) return;
             const key = `${m.MetaData.MMSI}|${JSON.stringify(body.Destination)}`;
             if (seen.has(key)) return;
@@ -52,6 +57,8 @@ jobs:
           };
           setTimeout(() => {
             if (!seen.size) console.log(`::notice title=nothing::No static message from ${want} in ${process.env.MINUTES} min`);
+            console.log(`::notice title=totals::${count} messages, ${statics} static messages`);
+            console.log(`::notice title=sample destinations::${[...dests].map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' | ')}`);
             process.exit(0);
           }, process.env.MINUTES * 60_000);
           JS
