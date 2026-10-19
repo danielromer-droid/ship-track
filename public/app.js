@@ -1483,8 +1483,10 @@ async function search() {
     if (keys.some((k) => k.includes(needle))) away.push({ mmsi, name: st[0], imo: st[3] });
   }
   const digits = needle.replace(/\D/g, '');
-  const hunt = !top.length && !away.length && /^\d+$/.test(needle) && (digits.length === 7 || digits.length === 9)
-    ? (digits.length === 7 ? { imo: +digits } : { mmsi: +digits }) : null;
+  const byNumber = /^\d+$/.test(needle) && (digits.length === 7 || digits.length === 9);
+  const hunt = top.length || away.length ? null
+    : byNumber ? (digits.length === 7 ? { imo: +digits } : { mmsi: +digits })
+    : /[A-Z]/.test(needle) && needle.length >= 4 ? { text: needle } : null;
   let places = [];
   if (!/^\d{5,}$/.test(needle)) {
     try {
@@ -1500,7 +1502,7 @@ async function search() {
     ...away.map((a, i) => `<li><button type="button" data-away="${i}"><span class="dot"></span>
       <span><strong class="mono">${esc(a.name || `MMSI ${a.mmsi}`)}</strong> not in view</span><span class="kind">Find it</span></button></li>`),
     ...(hunt ? [`<li><button type="button" data-hunt><svg class="pin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>
-      <span><strong class="mono">${hunt.imo ? `IMO ${hunt.imo}` : `MMSI ${hunt.mmsi}`}</strong> is not on the map yet</span><span class="kind">Look worldwide</span></button></li>`] : []),
+      <span><strong class="mono">${esc(hunt.text || (hunt.imo ? `IMO ${hunt.imo}` : `MMSI ${hunt.mmsi}`))}</strong> ${hunt.text ? 'is not in view' : 'is not on the map yet'}</span><span class="kind">Look worldwide</span></button></li>`] : []),
     ...places.map((p, i) => `<li><button type="button" data-place="${i}">
       <svg class="pin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">${p.port
         ? '<circle cx="12" cy="5" r="2"/><path d="M12 7v14M5 13a7 7 0 0 0 14 0M8 11h8"/>' : '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'}</svg>
@@ -1546,9 +1548,10 @@ function stopHunt(text) {
   if (text) { huntEl.querySelector('span').textContent = text; setTimeout(() => { if (!hunting) huntEl.hidden = true; }, 9000); } else huntEl.hidden = true;
 }
 $('#hunt-stop').addEventListener('click', () => stopHunt());
-async function findShip({ mmsi, imo, name }) {
+async function findShip({ mmsi, imo, name, text }) {
   stopHunt();
   if (state.mode !== 'live') return;
+  if (text) { findByName(text); return; }
   const label = name || (imo ? `IMO ${imo}` : `MMSI ${mmsi}`);
   const say = (text) => { huntEl.hidden = false; huntEl.querySelector('span').textContent = text; };
   if (!mmsi && imo) {
@@ -1578,6 +1581,47 @@ async function findShip({ mmsi, imo, name }) {
     select(mmsi);
   };
   sock.onclose = () => { if (hunting?.sock === sock) stopHunt(`The search for ${label} was cut off. Try again.`); };
+}
+
+// A name can't be filtered upstream, so listen to the whole world for a minute and keep the ships whose name matches.
+// Every position report carries the ship's name, so a ship under way near a shore station shows up within seconds.
+function findByName(text) {
+  const say = (t) => { huntEl.hidden = false; huntEl.querySelector('span').textContent = t; };
+  const sock = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/stream`);
+  sock.binaryType = 'arraybuffer';
+  const found = new Set();
+  const done = () => {
+    const ids = [...found].filter((id) => state.ships.get(id)?.lat != null);
+    if (!ids.length) { stopHunt(`No ship named “${text}” reported in a minute. It may be out of reach of shore stations.`); return; }
+    stopHunt();
+    if (ids.length === 1) {
+      const e = state.ships.get(ids[0]);
+      map.jumpTo({ center: [e.lon, e.lat], zoom: Math.max(map.getZoom(), 10) });
+      select(e.mmsi);
+    } else {
+      q.value = text;
+      qClear.hidden = false;
+      search(); // the matches are now known ships, so the list offers each of them
+    }
+  };
+  hunting = { sock, timer: setTimeout(done, 60_000) };
+  say(`Looking worldwide for ships named “${text}”…`);
+  sock.onopen = () => sock.send(JSON.stringify({ boxes: [[[-90, -180], [90, 180]]] }));
+  sock.onmessage = (ev) => {
+    let m;
+    try { m = JSON.parse(typeof ev.data === 'string' ? ev.data : decoder.decode(ev.data)); } catch { return; }
+    const id = m.MetaData?.MMSI;
+    if (!id || !(clean(m.MetaData.ShipName) || '').toUpperCase().includes(text)) return;
+    onAis(m);
+    if (!found.has(id) && state.ships.get(id)?.lat != null) {
+      found.add(id);
+      say(`Found ${found.size} named “${text}”, still listening…`);
+      // Give namesakes a little longer to report, then stop.
+      clearTimeout(hunting.timer);
+      hunting.timer = setTimeout(done, 15_000);
+    }
+  };
+  sock.onclose = () => { if (hunting?.sock === sock) done(); };
 }
 
 // ---------- filters ----------
