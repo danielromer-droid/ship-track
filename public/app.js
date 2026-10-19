@@ -909,15 +909,26 @@ async function lookUpPort(text, at) {
   }
   if (hit) {
     const [code, [name, lat, lon]] = hit;
-    if (lat != null) return { name, cc: code.slice(0, 2), lat, lon };
+    if (lat != null) return { name, cc: code.slice(0, 2), code, lat, lon };
     const { places = [] } = await fetchJson(`/api/search?q=${encodeURIComponent(name)}`);
     const p = places.find((q) => q.cc === code.slice(0, 2));
-    return p ? { name, cc: code.slice(0, 2), lat: p.lat, lon: p.lon } : null;
+    return p ? { name, cc: code.slice(0, 2), code, lat: p.lat, lon: p.lon } : null;
   }
   // Not a port we know: ask the place search, and keep the answer closest to the ship.
   const { places = [] } = await fetchJson(`/api/search?q=${encodeURIComponent(clean.join(' ') || s)}`);
   const p = places.sort((a, b) => km(at[0], at[1], a.lat, a.lon) - km(at[0], at[1], b.lat, b.lon))[0];
   return p && km(at[0], at[1], p.lat, p.lon) < 8000 ? { name: p.name, cc: p.cc, lat: p.lat, lon: p.lon } : null;
+}
+
+// Some crews also type where they came from: "FR LEH>DEHAM" or "GBHRW-NLRTM".
+function originText(dest) {
+  const raw = String(dest || '');
+  if (raw.includes('>')) {
+    const first = raw.split('>')[0].replace(/[=\-\s]+$/, '');
+    return norm(first) ? first : null;
+  }
+  const codes = [...norm(raw).matchAll(/\b([A-Z]{2}) ?([A-Z0-9]{3})\b/g)];
+  return codes.length >= 2 && codes[0][0] !== codes[codes.length - 1][0] ? codes[0][0] : null;
 }
 
 // One plan for the selected ship: its destination, and the lanes leading there.
@@ -929,6 +940,8 @@ function planRoute(e) {
   plan = mine;
   if (!dest) return;
   const at = posNow(e, Date.now());
+  const from = originText(dest);
+  if (from) findPort(from, at).then((o) => { if (plan === mine && o) { mine.from = o; panelDirty = true; } });
   Promise.all([findPort(dest, at), seaData()]).then(([place, g]) => {
     if (plan !== mine) return;
     if (!place) { mine.status = 'none'; panelDirty = true; return; }
@@ -1202,6 +1215,18 @@ function until(ms) {
   return h >= 48 ? `in ${Math.floor(h / 24)} d ${h % 24} h` : h ? `in ${h} h ${m} min` : `in ${m} min`;
 }
 
+const ICONS = {
+  speed: '<path d="M12 21a9 9 0 1 1 9-9"/><path d="M12 12l4-4"/><circle cx="12" cy="12" r="1.5"/>',
+  course: '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 6-5 1 2-6z"/>',
+  draught: '<rect x="8" y="3" width="8" height="18" rx="1.5"/><path d="M8 7h3M8 11h4M8 15h3"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+};
+const icon = (k) => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
+const TABS = [['voyage', 'Current voyage'], ['position', 'Current position'], ['ship', 'Ship']];
+let panelTab = 'voyage';
+const fmtUtc = (ms) => `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+const spaced = (code) => (code ? `${code.slice(0, 2)} ${code.slice(2)}` : '');
+
 function renderPanel() {
   const e = state.ships.get(state.selected);
   document.body.classList.toggle('has-panel', Boolean(e));
@@ -1219,35 +1244,54 @@ function renderPanel() {
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
     <div>
-      <div class="badges" id="badges"></div>
       <h2 class="title">${esc(e.name || `MMSI ${e.mmsi}`)}</h2>
-      <div class="route">${flagImg(f)}<span>${esc([f?.name, typeLabel(e.type)].filter(Boolean).join(' · '))}</span></div>
+      <div class="subtitle">${flagImg(f)}<span>${esc(typeLabel(e.type))}${e.imo ? ` <i>|</i> IMO ${e.imo}` : ''}</span><span class="badges" id="badges"></span></div>
     </div>
     <figure class="photo" id="photo" hidden><div class="frame"><img alt=""></div><figcaption></figcaption></figure>
-    <div class="cards">
-      <div class="card"><small>Speed</small><b id="speed">–</b><em id="speed-kmh"></em></div>
-      <div class="card"><small>Course</small><b id="course">–</b><em id="heading"></em></div>
-    </div>
-    <button type="button" class="next" id="dest-box" title="Show the route on the map">
-      <span class="dot" style="background: var(--c)"></span>
-      <span class="grow"><small>Destination</small><strong id="dest"></strong><small id="dest-to"></small></span>
-      <span class="countdown"><b id="countdown"></b><span id="eta"></span></span>
-    </button>
+    <div class="tabs" role="tablist">${TABS.map(([k, label]) =>
+      `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === panelTab}">${label}</button>`).join('')}</div>
+    <section class="pane" data-pane="voyage" ${panelTab === 'voyage' ? '' : 'hidden'}>
+      <div class="voyage">
+        <div class="end"><small id="from-name"></small><b id="from-code"></b></div>
+        <div class="leg" id="leg"><span class="done"></span><svg class="arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4l18 8-18 8 5-8z"/></svg><span class="todo"></span></div>
+        <div class="end to"><small id="to-name"></small><b id="to-code"></b></div>
+      </div>
+      <div class="times">
+        <div><small id="dep-label">Tracked since</small><span id="dep"></span></div>
+        <div class="to"><small>Estimated time of arrival</small><span id="eta"></span><em id="countdown"></em></div>
+      </div>
+      <div class="stats">
+        <div>${icon('speed')}<span><small>Speed</small><b id="speed">–</b></span></div>
+        <div>${icon('course')}<span><small>Course</small><b id="course">–</b></span></div>
+        <div>${icon('draught')}<span><small>Draught</small><b id="draught">–</b></span></div>
+      </div>
+      <button type="button" class="route-btn" id="dest-box"><span id="dest-to"></span></button>
+    </section>
+    <section class="pane details" data-pane="position" ${panelTab === 'position' ? '' : 'hidden'}><dl id="pos-facts"></dl></section>
+    <section class="pane details" data-pane="ship" ${panelTab === 'ship' ? '' : 'hidden'}><dl id="facts"></dl></section>
+    <div class="updated">${icon('clock')}<span>Last update <b id="updated"></b></span></div>
     <div class="actions">
       <button type="button" class="btn primary" id="follow">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
         <span>${state.following ? 'Stop following' : 'Follow'}</span>
       </button>
-      <button type="button" class="btn more" id="more">${expanded ? 'Fewer details' : 'All details'}</button>
+      <button type="button" class="btn more" id="more">${expanded ? 'Less' : 'More'}</button>
     </div>
-    <section class="details"><h3>Ship</h3><dl id="facts"></dl></section>
     ${state.mode === 'live' ? `<a class="photos-link" href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:${e.mmsi}" target="_blank" rel="noopener">More photos and voyage details on MarineTraffic ↗</a>` : ''}
     <p class="note">${state.mode === 'demo' ? 'Simulated ship: real ships appear once the app runs on Cloudflare with an aisstream.io key.'
-      : 'AIS data from <a href="https://aisstream.io">aisstream.io</a> and, in the Baltic, Fintraffic / digitraffic.fi (CC BY 4.0). The solid line is where the ship went since you opened the map; AIS does not say where a voyage started. The dashed line is an estimated sea route to the destination the crew entered.'}</p>`;
+      : 'AIS data from <a href="https://aisstream.io">aisstream.io</a> and, in the Baltic, Fintraffic / digitraffic.fi (CC BY 4.0). Ships do not broadcast where a voyage began unless the crew types it; the solid line is where the ship went since you opened the map, the dashed line an estimated sea route to its destination.'}</p>`;
 
   $('#close').onclick = deselect;
   $('#dest-box').onclick = showRoute;
   $('#follow').onclick = () => setFollowing(!state.following);
+  for (const b of panel.querySelectorAll('.tabs button')) {
+    b.onclick = () => {
+      panelTab = b.dataset.tab;
+      for (const t of panel.querySelectorAll('.tabs button')) t.setAttribute('aria-selected', String(t === b));
+      for (const s of panel.querySelectorAll('.pane')) s.hidden = s.dataset.pane !== panelTab;
+      tickPanel(e);
+    };
+  }
   const toggle = () => { panel.classList.toggle('expanded'); renderPanel(); keepShipVisible(); };
   $('#more').onclick = toggle;
   $('#handle').onclick = toggle;
@@ -1296,36 +1340,59 @@ function tickPanel(e) {
   const now = Date.now();
   const age = now - e.t;
   const live = state.mode === 'live' ? age < STALE_MS : true;
-  $('#badges').innerHTML = `${state.mode === 'demo' ? '<span class="badge planned">Demo</span>'
-    : live ? '<span class="badge live">Live AIS</span>' : `<span class="badge planned">Last seen ${ago(age)}</span>`}
-    <span>${esc(CATS[e.cat].label)} · class ${e.cls}</span>`;
-  $('#speed').innerHTML = e.sog != null ? `${num(e.sog, 1)}<span> kn</span>` : '–';
-  $('#speed-kmh').textContent = e.sog != null ? `${num(e.sog * 1.852, 0)} km/h` : '';
-  $('#course').innerHTML = e.cog != null ? `${num(e.cog)}°<span> ${compass(e.cog)}</span>` : '–';
-  $('#heading').textContent = e.hdg != null ? `heading ${num(e.hdg)}°` : '';
-  // Names and destinations come in a separate message every 6 minutes, so a ship can be on the map before them.
-  $('#dest').textContent = e.dest || (e.name ? 'Not reported' : 'Not received yet');
+  $('#badges').innerHTML = state.mode === 'demo' ? '<span class="badge planned">Demo</span>'
+    : live ? '<span class="badge live">Live</span>' : '<span class="badge planned">Not heard lately</span>';
+  $('#speed').textContent = e.sog != null ? `${num(e.sog, 1)} kn` : '–';
+  $('#course').textContent = e.cog != null ? `${num(e.cog, 1)}°` : '–';
+  $('#draught').textContent = e.draught ? `${num(e.draught, 1)} m` : '–';
+  $('#updated').textContent = ago(age);
+
+  // Voyage: where from (only when the crew typed it), where to, and how far along.
   const t = etaMs(e.eta);
   const p = plan?.mmsi === e.mmsi ? plan : null;
   const ok = p?.status === 'ok' && p.nm != null;
-  if (ok) $('#dest').textContent = `${p.place.name}${p.place.cc ? `, ${p.place.cc}` : ''}`;
+  const from = p?.from;
+  $('#from-name').textContent = from ? from.name.toUpperCase() : 'Departure';
+  $('#from-code').textContent = from ? spaced(from.code) || from.name : 'not broadcast';
+  $('#from-code').classList.toggle('muted', !from);
+  // Names and destinations come in a separate message every 6 minutes, so a ship can be on the map before them.
+  $('#to-name').textContent = ok ? p.place.name.toUpperCase() : 'Destination';
+  $('#to-code').textContent = ok ? spaced(p.place.code) || p.place.name : e.dest || (e.name ? 'not reported' : 'not received yet');
+  $('#to-code').classList.toggle('muted', !e.dest);
+  const [lat, lon] = posNow(e, now);
+  let done = 0.12;
+  if (ok && from) {
+    const sailed = km(from.lat, from.lon, lat, lon) / 1.852;
+    done = Math.min(0.92, Math.max(0.08, sailed / (sailed + p.nm)));
+  } else if (ok) done = 0.5;
+  $('#leg').style.setProperty('--done', `${Math.round(done * 100)}%`);
+  const first = e.trail[0]?.[2];
+  $('#dep-label').textContent = 'Tracked since';
+  $('#dep').textContent = first ? fmtUtc(first) : '–';
   // Without an ETA from the crew, estimate one from the distance left at the current speed.
   const guess = !t && ok && e.sog >= 1 ? now + (p.nm / e.sog) * 3_600_000 : null;
-  $('#countdown').textContent = t ? until(t) : guess ? `≈ ${until(guess)}` : '';
-  $('#eta').textContent = t ? fmtTime(t) : guess ? 'at this speed' : '';
-  $('#dest-to').textContent = !e.dest ? (e.name ? 'The crew left it blank, so no route' : 'Ships send it every 6 minutes; the route appears then')
-    : ok ? `${num(p.nm)} nm to go · crew typed “${e.dest}”`
-    : p?.status === 'loading' ? 'Finding the port…' : p?.status === 'none' ? 'As typed by the crew; not a port we know, so no route' : '';
+  $('#eta').textContent = t ? fmtUtc(t) : guess ? `≈ ${fmtUtc(guess)}` : 'Not reported';
+  $('#countdown').textContent = t ? until(t) : guess ? `${until(guess)} at this speed` : '';
+  $('#dest-to').textContent = !e.dest ? (e.name ? 'The crew left the destination blank, so no route' : 'Ships send their destination every 6 minutes')
+    : ok ? `Show route on the map · ${num(p.nm)} nm to go · crew typed “${e.dest}”`
+    : p?.status === 'loading' ? 'Finding the port…' : p?.status === 'none' ? `“${e.dest}” is not a port we know, so no route` : '';
   $('#dest-box').disabled = !ok;
-  const [lat, lon] = posNow(e, now);
-  const len = e.dim ? e.dim[0] + e.dim[1] : null, beam = e.dim ? e.dim[2] + e.dim[3] : null;
+
   const nav = NAV[e.nav] || (e.sog >= 0.5 ? 'Under way' : e.sog != null ? 'Stopped' : null);
-  const facts = [
-    ['Status', nav], ['Type', typeLabel(e.type)], ['Size', len ? `${num(len)} × ${num(beam)} m` : null],
-    ['Draught', e.draught ? `${num(e.draught, 1)} m` : null], ['MMSI', e.mmsi], ['IMO', e.imo], ['Call sign', e.cs],
-    ['Position', `${dms(lat, 'N', 'S')} ${dms(lon, 'E', 'W')}`], ['Last report', ago(age)],
-  ];
-  $('#facts').innerHTML = facts.map(([k, v]) => `<dt>${k}</dt><dd>${v == null || v === '' ? '–' : esc(v)}</dd>`).join('');
+  const len = e.dim ? e.dim[0] + e.dim[1] : null, beam = e.dim ? e.dim[2] + e.dim[3] : null;
+  const f = flagOf(e.mmsi);
+  const list = (rows) => rows.map(([k, v]) => `<dt>${k}</dt><dd>${v == null || v === '' ? '–' : esc(v)}</dd>`).join('');
+  $('#pos-facts').innerHTML = list([
+    ['Latitude', dms(lat, 'N', 'S')], ['Longitude', dms(lon, 'E', 'W')], ['Status', nav],
+    ['Speed', e.sog != null ? `${num(e.sog, 1)} kn (${num(e.sog * 1.852, 0)} km/h)` : null],
+    ['Course', e.cog != null ? `${num(e.cog, 1)}° ${compass(e.cog)}` : null], ['Heading', e.hdg != null ? `${num(e.hdg)}°` : null],
+    ['Last report', ago(age)],
+  ]);
+  $('#facts').innerHTML = list([
+    ['Name', e.name], ['Type', typeLabel(e.type)], ['Flag', f?.name], ['Size', len ? `${num(len)} × ${num(beam)} m` : null],
+    ['Draught', e.draught ? `${num(e.draught, 1)} m` : null], ['IMO', e.imo], ['MMSI', e.mmsi], ['Call sign', e.cs],
+    ['AIS class', e.cls],
+  ]);
 }
 
 // ---------- swipe the sheet down to close it (phone) ----------
