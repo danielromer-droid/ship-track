@@ -45,15 +45,16 @@ jobs:
           ws.binaryType = 'arraybuffer';
           ws.onerror = (err) => console.log('::warning::socket error ' + (err.message || ''));
           ws.onclose = (ev) => console.log(`::warning::socket closed ${ev.code} ${ev.reason}`);
-          const only = +process.env.MMSI || 0;
+          const list = (process.env.MMSI || '').split(',').map(Number).filter(Boolean), only = list[0] || 0;
           let hits = 0;
-          ws.onopen = () => ws.send(JSON.stringify(only ? { boxes: [[[-90, -180], [90, 180]]], mmsi: [only] } : { boxes: [[[s, w], [n, e]]] }));
+          ws.onopen = () => ws.send(JSON.stringify(only ? { boxes: [[[-90, -180], [90, 180]]], mmsi: list } : { boxes: [[[s, w], [n, e]]] }));
           ws.onmessage = (ev) => {
             const m = JSON.parse(typeof ev.data === 'string' ? ev.data : new TextDecoder().decode(ev.data));
             if (m.error) console.log('::warning::' + m.error);
             count++;
+            if (count <= 2) console.log(`::notice title=message ${count}::${JSON.stringify(m).slice(0, 600)}`);
             if (only) {
-              if (m.MetaData?.MMSI === only && hits++ < 8) console.log(`::notice title=${only} ${m.MessageType}::${JSON.stringify(m.MetaData).slice(0, 400)}`);
+              if (list.includes(m.MetaData?.MMSI) && hits++ < 8) console.log(`::notice title=${m.MetaData.MMSI} ${m.MessageType}::${JSON.stringify(m.MetaData).slice(0, 400)}`);
               return;
             }
             const name = (m.MetaData?.ShipName || '').trim().toUpperCase();
