@@ -807,9 +807,10 @@ async function lookUpPort(text, at) {
   }
   let hit = P.names.get(tried[0]) && nearest(P.names.get(tried[0]));
   if (!hit) {
+    // The last code named is where it goes: "GBHRW-NLRTM" means Harwich to Rotterdam.
     for (const m of s.matchAll(/\b([A-Z]{2}) ?([A-Z0-9]{3})\b/g)) {
       const p = P.codes[m[1]]?.[m[2]];
-      if (p) { hit = [m[1] + m[2], p]; break; }
+      if (p) hit = [m[1] + m[2], p];
     }
   }
   if (!hit) {
