@@ -53,7 +53,6 @@ Every push to `main` then redeploys. With the command line instead: `npm install
 | Map | [OpenFreeMap](https://openfreemap.org) (OpenStreetMap) | Free, no key | Same base map as TrainLive. Satellite imagery from Esri. |
 | Weather, waves | [Open-Meteo](https://open-meteo.com), [RainViewer](https://www.rainviewer.com) | Free, no key | Fetched by the browser only when the weather button is on. |
 | Port search | [Photon](https://photon.komoot.io) (OpenStreetMap) | Free, no key | Cached for a day by the Worker. |
-| Ship photos | [Wikimedia Commons](https://commons.wikimedia.org) and [Wikidata](https://www.wikidata.org), by IMO number | Free, no key | Many large ships have one; small craft rarely do. The photographer and licence are shown under each photo. |
 | Ports | [UN/LOCODE](https://unece.org/trade/cefact/unlocode-code-list-country-and-territory) via [datasets/un-locode](https://github.com/datasets/un-locode) | Free | Turns destinations such as `NL RTM` into a place on the map. |
 | Shipping lanes | Eurostat MARNET, as packaged by [searoute](https://github.com/johnx25bd/searoute) (MIT) | Free | The dashed route follows these lanes, so it is an estimate, not the crew's passage plan. |
 
