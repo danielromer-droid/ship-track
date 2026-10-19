@@ -204,11 +204,98 @@ mapStyle = isDark() ? STYLES.dark : STYLES.light;
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 map.touchZoomRotate.disableRotation();
 map.keyboard.disableRotation();
-const geolocate = new maplibregl.GeolocateControl({ trackUserLocation: false, fitBoundsOptions: { maxZoom: 10 } });
+const geolocate = new maplibregl.GeolocateControl({
+  trackUserLocation: true, showUserLocation: true, positionOptions: { enableHighAccuracy: true }, fitBoundsOptions: { maxZoom: 10 },
+});
 map.addControl(geolocate, 'bottom-right');
 map.addControl(new maplibregl.ScaleControl({ unit: 'nautical', maxWidth: 120 }), 'bottom-left');
 new ResizeObserver(() => map.resize()).observe($('#map'));
 darkQuery.addEventListener('change', () => applyTheme());
+
+// ---------- which way the phone points ----------
+// Once located, a beam on the blue dot follows the phone's compass, and the pill names the
+// nearest ship in that direction. iPhones only share the compass after a tap asks for it.
+
+const me = { pos: null, heading: null, marker: null };
+const pointingEl = $('#pointing');
+geolocate.on('geolocate', (ev) => {
+  me.pos = [ev.coords.latitude, ev.coords.longitude];
+  if (me.marker) me.marker.setLngLat([me.pos[1], me.pos[0]]);
+  if (!compassOn) startCompass();
+  showHeading();
+});
+geolocate.on('error', () => { pointingEl.hidden = true; });
+
+let compassOn = false;
+function startCompass() {
+  compassOn = true;
+  const listen = () => {
+    const absolute = 'ondeviceorientationabsolute' in window;
+    addEventListener(absolute ? 'deviceorientationabsolute' : 'deviceorientation', onOrientation, true);
+  };
+  const ask = globalThis.DeviceOrientationEvent?.requestPermission;
+  if (typeof ask === 'function') ask.call(DeviceOrientationEvent).then((r) => { if (r === 'granted') listen(); }).catch(() => { compassOn = false; });
+  else listen();
+}
+// iPhones need the request inside the tap itself.
+map.getContainer().querySelector('.maplibregl-ctrl-geolocate')?.addEventListener('click', () => { if (!compassOn) startCompass(); });
+
+function onOrientation(ev) {
+  let h = null;
+  if (typeof ev.webkitCompassHeading === 'number' && ev.webkitCompassHeading >= 0) h = ev.webkitCompassHeading;
+  else if (ev.absolute && ev.alpha != null) h = 360 - ev.alpha;
+  if (h == null) return;
+  h = (h + (screen.orientation?.angle ?? window.orientation ?? 0) + 360) % 360;
+  // Smooth the jitter, going the short way round.
+  me.heading = me.heading == null ? h : (me.heading + ((((h - me.heading) % 360) + 540) % 360 - 180) * 0.25 + 360) % 360;
+  showHeadingSoon();
+}
+
+let headingFrame = 0;
+function showHeadingSoon() {
+  if (!headingFrame) headingFrame = requestAnimationFrame(() => { headingFrame = 0; showHeading(); });
+}
+let lastPointing = 0;
+function showHeading() {
+  if (!me.pos || me.heading == null) return;
+  if (!me.marker) {
+    const el = document.createElement('div');
+    el.className = 'me-beam';
+    el.innerHTML = `<svg viewBox="0 0 160 160" aria-hidden="true"><defs><radialGradient id="beam" cx="80" cy="80" r="78" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1B73E8" stop-opacity=".55"/><stop offset="1" stop-color="#1B73E8" stop-opacity="0"/></radialGradient></defs>
+      <path d="M80 80 L52 6 A78 78 0 0 1 108 6 Z" fill="url(#beam)"/></svg>`;
+    me.marker = new maplibregl.Marker({ element: el, rotationAlignment: 'map', pitchAlignment: 'map' })
+      .setLngLat([me.pos[1], me.pos[0]]).addTo(map);
+  }
+  me.marker.setRotation(me.heading);
+  const now = Date.now();
+  if (now - lastPointing < 500) return;
+  lastPointing = now;
+  const target = shipPointedAt();
+  pointingEl.hidden = false;
+  pointingEl.innerHTML = `Pointing <b>${compass(me.heading)} ${num(me.heading)}°</b>${target
+    ? ` · ${esc(target.e.name || `MMSI ${target.e.mmsi}`)}, ${num(target.nm, target.nm < 10 ? 1 : 0)} nm` : ''}`;
+  pointingEl.dataset.id = target ? target.e.mmsi : '';
+  pointingEl.disabled = !target;
+}
+
+// The nearest ship on the map within 8° of where the phone points.
+function shipPointedAt() {
+  let best = null;
+  for (const [id, [lat, lon]] of state.positions) {
+    const e = state.ships.get(id);
+    if (!e) continue;
+    const off = Math.abs((((bearing(me.pos, [lat, lon]) - me.heading) % 360) + 540) % 360 - 180);
+    if (off > 8) continue;
+    const nm = km(me.pos[0], me.pos[1], lat, lon) / 1.852;
+    if (!best || nm < best.nm) best = { e, nm };
+  }
+  return best;
+}
+pointingEl.addEventListener('click', () => {
+  const id = Number(pointingEl.dataset.id);
+  if (id) select(id);
+});
 
 // ---------- satellite and weather (map buttons above locate) ----------
 
