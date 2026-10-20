@@ -42,6 +42,7 @@ PLACES = {
     'GBTIL': ['Tilbury', 51.46, 0.36], 'ESALG': ['Algeciras', 36.13, -5.43], 'MAPTM': ['Tanger Med', 35.89, -5.5],
     'GIGIB': ['Gibraltar', 36.14, -5.36], 'PLGDN': ['Gdansk', 54.4, 18.67], 'EGPSD': ['Port Said', 31.26, 32.3],
     'CNSHA': ['Shanghai', 31.35, 121.6], 'GBPME': ['Portsmouth', 50.81, -1.1],
+    'GBDVR': ['Dover', 51.12, 1.33], 'FRCQF': ['Calais', 50.97, 1.86], 'GBHRW': ['Harwich', 51.95, 1.27], 'GBHUL': ['Hull', 53.74, -0.28],
 }
 # English names ships write that the code list spells the local way.
 ALIASES = {

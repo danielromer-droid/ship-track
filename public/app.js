@@ -907,6 +907,17 @@ async function lookUpPort(text, at) {
       break;
     }
   }
+  if (!hit) {
+    // A mistyped code, like "FRDNK" for Dunkerque (FRDKK): one letter off a port of that country near the ship.
+    let best = 400;
+    for (const m of s.matchAll(/\b([A-Z]{2}) ?([A-Z]{3})\b/g)) {
+      for (const [c, p] of Object.entries(P.codes[m[1]] || {})) {
+        if (p[1] == null || [...c].filter((ch, i) => ch !== m[2][i]).length !== 1) continue;
+        const d = km(at[0], at[1], p[1], p[2]);
+        if (d < best) { best = d; hit = [m[1] + c, p]; }
+      }
+    }
+  }
   if (hit) {
     const [code, [name, lat, lon]] = hit;
     if (lat != null) return { name, cc: code.slice(0, 2), code, lat, lon };
@@ -922,9 +933,17 @@ async function lookUpPort(text, at) {
   return p && km(at[0], at[1], p.lat, p.lon) < 8000 ? { name: p.name, cc: p.cc, lat: p.lat, lon: p.lon } : null;
 }
 
+// Ferries often type both ends of their run: "GBDVR <> FRDKK". Which one is next depends on where the ship heads.
+const ROUND_TRIP = /<\s*[-=]*\s*>/;
+function roundTrip(dest) {
+  const ends = String(dest || '').split(ROUND_TRIP).map((t) => t.trim()).filter((t) => norm(t));
+  return ends.length === 2 ? ends : null;
+}
+
 // Some crews also type where they came from: "FR LEH>DEHAM" or "GBHRW-NLRTM".
 function originText(dest) {
   const raw = String(dest || '');
+  if (roundTrip(raw)) return null;
   if (raw.includes('>')) {
     const first = raw.split('>')[0].replace(/[=\-\s]+$/, '');
     return norm(first) ? first : null;
@@ -936,15 +955,26 @@ function originText(dest) {
 // One plan for the selected ship: its destination, and the lanes leading there.
 let plan = null;
 function planRoute(e) {
-  const dest = e.dest || '';
-  if (plan && plan.mmsi === e.mmsi && plan.dest === dest) return;
-  const mine = { mmsi: e.mmsi, dest, status: dest ? 'loading' : 'none', place: null, g: null, tree: null, goal: -1, goalKm: 0 };
+  // A ferry keeps "A <> B" both ways, so its plan is redone when it turns round.
+  const dest = e.dest || '', turn = roundTrip(dest) && e.cog != null ? Math.round(e.cog / 90) % 4 : null;
+  if (plan && plan.mmsi === e.mmsi && plan.dest === dest && plan.turn === turn) return;
+  const mine = { mmsi: e.mmsi, dest, turn, status: dest ? 'loading' : 'none', place: null, g: null, tree: null, goal: -1, goalKm: 0 };
   plan = mine;
   if (!dest) return;
   const at = posNow(e, Date.now());
   const from = originText(dest);
   if (from) findPort(from, at).then((o) => { if (plan === mine && o) { mine.from = o; panelDirty = true; } });
-  Promise.all([findPort(dest, at), seaData()]).then(([place, g]) => {
+  const ends = roundTrip(dest);
+  const goal = !ends ? findPort(dest, at) : Promise.all(ends.map((t) => findPort(t, at))).then(([a, b]) => {
+    if (!a || !b) return a || b;
+    // Heading for the end its course points at; when stopped, the end it is not at.
+    const off = (p) => Math.abs(((bearing(at, [p.lat, p.lon]) - e.cog + 540) % 360) - 180);
+    const next = e.sog >= 1 && e.cog != null ? (off(a) <= off(b) ? a : b)
+      : km(at[0], at[1], a.lat, a.lon) > km(at[0], at[1], b.lat, b.lon) ? a : b;
+    mine.from = next === a ? b : a;
+    return next;
+  });
+  Promise.all([goal, seaData()]).then(([place, g]) => {
     if (plan !== mine) return;
     if (!place) { mine.status = 'none'; panelDirty = true; return; }
     const [goal, goalKm] = nearestNode(g, place.lat, place.lon);
