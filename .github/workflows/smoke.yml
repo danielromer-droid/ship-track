@@ -36,6 +36,7 @@ jobs:
           for imo in 9866689 9811000; do
             echo "::notice title=ship $imo::$(curl -sS "${{ inputs.site }}/api/ship?imo=$imo" | head -c 500)"
           done
+          echo "::notice title=ship by name::$(curl -sS "${{ inputs.site }}/api/ship?name=OSCAR%20WILDE" | head -c 800)"
       - name: Extra free feeds
         run: |
           dt='https://meri.digitraffic.fi/api/ais/v1'

@@ -10,7 +10,9 @@
 // GET /api/extra?box=s,w,n,e ships from extra open feeds (Finland's Digitraffic, Baltic Sea) in that area,
 //                            as aisstream.io-shaped messages so the page handles them the same way.
 // GET /api/photo?imo=9811000&name=EVER%20GIVEN   a photo of the ship, with the photographer's credit when needed.
-// GET /api/ship?imo=9811000  { mmsi, name } of a ship known by its IMO number (Wikidata), to look for it worldwide.
+// GET /api/ship?imo=9811000  { mmsi, name, ships } of a ship known by its IMO number, to look for it worldwide.
+// GET /api/ship?name=OSCAR%20WILDE   { ships: [{ mmsi, name, imo, flag }] } with that name.
+//                            Global Fishing Watch's vessel identity registry when GFW_TOKEN is set, else Wikidata (IMO only).
 //
 // /api/stream also takes {"boxes": [...], "mmsi": [235000000]}: only those ships, used to find one anywhere.
 
@@ -25,7 +27,7 @@ export default {
       if (url.pathname === '/api/health') return await health(url, env);
       if (url.pathname === '/api/search') return await search(url, ctx);
       if (url.pathname === '/api/where') return where(request);
-      if (url.pathname === '/api/ship') return shipByImo(url);
+      if (url.pathname === '/api/ship') return shipLookup(url, env);
       if (url.pathname === '/api/extra') return await extra(url, ctx);
       if (url.pathname === '/api/photo') return await photo(url, ctx);
     } catch (err) {
@@ -118,6 +120,46 @@ function cleanBoxes(boxes) {
 }
 
 // ---------- a ship's MMSI from its IMO number ----------
+
+const GFW = 'https://gateway.api.globalfishingwatch.org/v3/vessels/search';
+
+async function shipLookup(url, env) {
+  const token = env.GFW_TOKEN && String(env.GFW_TOKEN).trim();
+  const imo = url.searchParams.get('imo') || '';
+  const name = (url.searchParams.get('name') || '').toUpperCase().replace(/\s+/g, ' ').trim();
+  if (!token) return name ? json({ ships: [], source: null }) : shipByImo(url);
+  if (imo && !/^\d{7}$/.test(imo)) return json({ error: 'imo must be 7 digits' }, 400);
+  if (!imo && name.length < 3) return json({ error: 'give an imo number or a name' }, 400);
+  const cache = caches.default;
+  const cacheKey = new Request(`https://cache.ship-track/ship/gfw1?imo=${imo}&name=${encodeURIComponent(name)}`);
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit;
+  const q = new URLSearchParams({ 'datasets[0]': 'public-global-vessel-identity:latest', limit: '20',
+    ...(imo ? { where: `imo = '${imo}'` } : { query: name }) });
+  const r = await fetch(`${GFW}?${q}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) {
+    if (imo) return shipByImo(url); // registry down or token refused: the old lookup still answers
+    return json({ ships: [], error: `ship registry answered ${r.status}` });
+  }
+  // One row per MMSI, from what ships broadcast (and registries), newest transmission first.
+  const seen = new Map();
+  for (const entry of (await r.json()).entries || []) {
+    for (const v of [...(entry.selfReportedInfo || []), ...(entry.registryInfo || [])]) {
+      const mmsi = /^\d{9}$/.test(v.ssvid || '') ? +v.ssvid : null;
+      if (!mmsi) continue;
+      const row = { mmsi, name: v.shipname || null, imo: /^\d{7}$/.test(v.imo || '') ? +v.imo : null, flag: v.flag || null,
+        last: v.transmissionDateTo || null };
+      const old = seen.get(mmsi);
+      if (!old || (row.last && (!old.last || row.last > old.last))) seen.set(mmsi, { ...old, ...Object.fromEntries(Object.entries(row).filter(([, x]) => x != null)) });
+    }
+  }
+  let ships = [...seen.values()].sort((a, b) => String(b.last || '').localeCompare(String(a.last || '')));
+  if (name) ships = ships.filter((v) => (v.name || '').toUpperCase().includes(name)).slice(0, 10);
+  const res = json(imo ? { imo: +imo, mmsi: ships[0]?.mmsi || null, name: ships[0]?.name || null, ships, source: 'gfw' } : { ships, source: 'gfw' });
+  res.headers.set('Cache-Control', `public, max-age=${ships.length ? 86_400 : 3600}`);
+  await cache.put(cacheKey, res.clone());
+  return res;
+}
 
 async function shipByImo(url) {
   const imo = url.searchParams.get('imo') || '';

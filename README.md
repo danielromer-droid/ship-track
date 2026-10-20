@@ -58,6 +58,7 @@ Every push to `main` then redeploys. With the command line instead: `npm install
 | Ports | [UN/LOCODE](https://unece.org/trade/cefact/unlocode-code-list-country-and-territory) via [datasets/un-locode](https://github.com/datasets/un-locode) | Free | Turns destinations such as `NL RTM` into a place on the map. |
 | Shipping lanes | Eurostat MARNET, as packaged by [searoute](https://github.com/johnx25bd/searoute) (MIT) | Free | The dashed route follows these lanes, so it is an estimate, not the crew's passage plan. |
 | Ferry timetables | Brittany Ferries, DFDS (Dieppe–Newhaven), Corsica Linea, Corsica Ferries open GTFS files on [transport.data.gouv.fr](https://transport.data.gouv.fr) (Licence Ouverte 2.0) | Free | Rebuilt weekly by `.github/workflows/ferries.yml` into `public/data/ferries.json`. Shown on the ship card as a timetable, separate from live AIS. |
+| Ship identity | [Global Fishing Watch](https://globalfishingwatch.org/our-apis/) vessel identity API (non-commercial use), else Wikidata | Free token, secret `GFW_TOKEN` | Turns an IMO number or a name into MMSIs, so search can ask the live feed for those ships anywhere. |
 
 Things to know about AIS:
 - A moving ship reports every 2 to 10 seconds, a ship at anchor or moored only every 3 minutes, and names and destinations

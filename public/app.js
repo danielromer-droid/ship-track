@@ -1663,8 +1663,13 @@ async function findShip({ mmsi, imo, name, text }) {
 
 // A name can't be filtered upstream, so listen to the whole world for a minute and keep the ships whose name matches.
 // Every position report carries the ship's name, so a ship under way near a shore station shows up within seconds.
-function findByName(text) {
+async function findByName(text) {
   const say = (t) => { huntEl.hidden = false; huntEl.querySelector('span').textContent = t; };
+  // With the ship registry, a name gives MMSIs, and only those ships are asked for.
+  say(`Looking up ships named “${text}”…`);
+  const reg = await fetchJson(`/api/ship?name=${encodeURIComponent(text)}`).catch(() => null);
+  const ids = (reg?.ships || []).map((v) => v.mmsi).filter(Boolean).slice(0, 10);
+  if (ids.length) { huntMany(text, ids); return; }
   const sock = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/stream`);
   sock.binaryType = 'arraybuffer';
   const found = new Set();
@@ -1697,6 +1702,43 @@ function findByName(text) {
       // Give namesakes a little longer to report, then stop.
       clearTimeout(hunting.timer);
       hunting.timer = setTimeout(done, 15_000);
+    }
+  };
+  sock.onclose = () => { if (hunting?.sock === sock) done(); };
+}
+
+// Several MMSIs at once, anywhere: stop a little after the first one reports.
+function huntMany(text, ids) {
+  stopHunt();
+  const say = (t) => { huntEl.hidden = false; huntEl.querySelector('span').textContent = t; };
+  const sock = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/stream`);
+  sock.binaryType = 'arraybuffer';
+  const found = new Set();
+  const done = () => {
+    const got = [...found].filter((id) => state.ships.get(id)?.lat != null);
+    if (!got.length) { stopHunt(`No ship named “${text}” reported in 5 minutes. It may be out of reach of shore stations.`); return; }
+    stopHunt();
+    if (got.length === 1) {
+      const e = state.ships.get(got[0]);
+      map.jumpTo({ center: [e.lon, e.lat], zoom: Math.max(map.getZoom(), 10) });
+      select(e.mmsi);
+    } else { q.value = text; qClear.hidden = false; search(); }
+  };
+  hunting = { sock, timer: setTimeout(done, 5 * 60_000) };
+  say(`Looking worldwide for ${ids.length} ship${ids.length > 1 ? 's' : ''} named “${text}”…`);
+  sock.onopen = () => sock.send(JSON.stringify({ boxes: [[[-90, -180], [90, 180]]], mmsi: ids }));
+  sock.onmessage = (ev) => {
+    let m;
+    try { m = JSON.parse(typeof ev.data === 'string' ? ev.data : decoder.decode(ev.data)); } catch { return; }
+    const id = m.MetaData?.MMSI;
+    if (!ids.includes(id)) return;
+    onAis(m);
+    if (!found.has(id) && state.ships.get(id)?.lat != null) {
+      found.add(id);
+      if (found.size === ids.length) { done(); return; }
+      say(`Found ${found.size} named “${text}”, still listening…`);
+      clearTimeout(hunting.timer);
+      hunting.timer = setTimeout(done, 20_000);
     }
   };
   sock.onclose = () => { if (hunting?.sock === sock) done(); };
