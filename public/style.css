@@ -134,6 +134,24 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
 }
 .theme-btn:hover { border-color: var(--line-strong); }
+.menu-wrap { position: relative; flex: none; }
+.menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; min-width: 220px; margin: 0; padding: 6px; list-style: none;
+  border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); border: 1px solid var(--line);
+}
+.menu[hidden] { display: none; }
+.menu button { width: 100%; min-height: 44px; padding: 0 12px; border: 0; border-radius: 8px; background: none; color: var(--ink); font: 500 15px var(--sans, inherit); text-align: left; cursor: pointer; }
+.menu button:hover, .menu button:focus-visible { background: var(--surface-2); outline: none; }
+dialog.info {
+  width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow-y: auto; padding: 24px; border: 0; border-radius: 20px;
+  background: var(--surface); color: var(--ink); box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
+}
+dialog.info::backdrop { background: rgba(10, 14, 20, .5); }
+dialog.info h2 { margin: 0 0 12px; font: 600 22px/1.2 var(--mono); }
+dialog.info p { margin: 0 0 12px; font-size: 15px; line-height: 1.5; color: var(--ink); }
+dialog.info a { color: var(--accent); }
+dialog.info form { display: flex; justify-content: flex-end; margin-top: 8px; }
+dialog.info .btn { flex: none; padding: 0 24px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chips button {
@@ -332,6 +350,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .brand, .search kbd { display: none; }
   .legend { display: none; }
   .theme-btn { width: 48px; height: 48px; border-radius: 24px; border: 0; background: var(--surface); box-shadow: var(--shadow); }
+  .menu-wrap { pointer-events: auto; }
   .chips { flex-basis: 100%; }
   .search { flex: 1 1 0; min-width: 0; max-width: none; height: 48px; border-radius: 24px; background: var(--surface); border: 0; box-shadow: var(--shadow); }
   .chips { flex-wrap: nowrap; overflow-x: auto; }

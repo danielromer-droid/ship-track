@@ -2035,3 +2035,17 @@ setInterval(draw, 1000);
 })();
 startOnVisitorCountry();
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+
+// ---------- about, terms, privacy, contact ----------
+
+const menuBtn = $('#menu-btn'), menu = $('#menu');
+const showMenu = (on) => { menu.hidden = !on; menuBtn.setAttribute('aria-expanded', String(on)); };
+menuBtn.addEventListener('click', (ev) => { ev.stopPropagation(); showMenu(menu.hidden); });
+document.addEventListener('click', (ev) => { if (!ev.target.closest('.menu-wrap')) showMenu(false); });
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') showMenu(false); });
+for (const b of menu.querySelectorAll('[data-info]')) {
+  b.addEventListener('click', () => { showMenu(false); $(`#info-${b.dataset.info}`).showModal(); });
+}
+// A click on the dark backdrop closes the window too.
+for (const d of document.querySelectorAll('dialog.info')) d.addEventListener('click', (ev) => { if (ev.target === d) d.close(); });
+

@@ -41,6 +41,17 @@
     </div>
 
     <button type="button" id="theme" class="theme-btn" aria-label="Theme: automatic" title="Theme: automatic"></button>
+    <div class="menu-wrap">
+      <button type="button" id="menu-btn" class="theme-btn" aria-label="About, terms, privacy and contact" aria-haspopup="menu" aria-expanded="false">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <ul id="menu" class="menu" role="menu" hidden>
+        <li><button type="button" role="menuitem" data-info="about">About us</button></li>
+        <li><button type="button" role="menuitem" data-info="terms">Terms and conditions</button></li>
+        <li><button type="button" role="menuitem" data-info="privacy">Privacy</button></li>
+        <li><button type="button" role="menuitem" data-info="contact">Contact us</button></li>
+      </ul>
+    </div>
 
     <nav class="chips" id="chips" aria-label="Ship types"></nav>
   </header>
@@ -73,5 +84,35 @@
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="app.js"></script>
+
+  <dialog class="info" id="info-about" aria-labelledby="about-h">
+    <h2 id="about-h">About us</h2>
+    <p>Ship Track is a free live map of ships around the world, made by the team behind <a href="https://trainlive.cc" target="_blank" rel="noopener">trainlive.cc</a>.</p>
+    <p>Positions come from the AIS radio signals ships send, collected by volunteer receivers (aisstream.io) and, in the Baltic, by Finland's Fintraffic. Names and types missing from the signal come from the Global Fishing Watch ship registry. Ferry timetables come from the operators' published open data, and routes are estimated along the main shipping lanes.</p>
+    <p>Coverage depends on those receivers: ships out of their reach do not appear.</p>
+    <form method="dialog"><button class="btn primary">Close</button></form>
+  </dialog>
+  <dialog class="info" id="info-terms" aria-labelledby="terms-h">
+    <h2 id="terms-h">Terms and conditions</h2>
+    <p>Ship Track is provided free of charge, "as is", for general information only.</p>
+    <p><strong>We are not responsible for the accuracy, completeness or timeliness of the data.</strong> Positions, destinations, arrival times, routes, timetables, photos and ship details come from third parties and from what crews type into their equipment. They can be wrong, late or missing.</p>
+    <p><strong>We take no responsibility for any decision, loss or damage</strong> resulting from the use of this site. Do not use it for navigation, safety at sea, or any purpose where an error could cause harm. Always rely on official sources.</p>
+    <p>Data and photos remain the property of their owners and are shown under their licences, credited on the map and on each ship card. The service may change or stop at any time without notice.</p>
+    <form method="dialog"><button class="btn primary">Close</button></form>
+  </dialog>
+  <dialog class="info" id="info-privacy" aria-labelledby="privacy-h">
+    <h2 id="privacy-h">Privacy</h2>
+    <p>Ship Track has no accounts, no advertising and no tracking cookies.</p>
+    <p>Your map view, theme and recently seen ships are kept only in your own browser, so the map opens where you left it. You can clear them at any time by clearing this site's data in your browser.</p>
+    <p>If you use "locate me", your position and compass direction stay on your device and are never sent to us. To open the map near you, our server uses the country your connection comes from, without storing it.</p>
+    <p>The map loads data from other services (map tiles, ship photos, and weather when that layer is on), which receive your IP address as for any web page. The weather service also receives the approximate centre of the map.</p>
+    <form method="dialog"><button class="btn primary">Close</button></form>
+  </dialog>
+  <dialog class="info" id="info-contact" aria-labelledby="contact-h">
+    <h2 id="contact-h">Contact us</h2>
+    <p>Questions, corrections or ideas? Write to us at <a id="contact-mail" href="mailto:contact@trainlive.cc">contact@trainlive.cc</a>.</p>
+    <p>Please note that we can't correct what ships broadcast themselves, such as a wrong destination typed by the crew.</p>
+    <form method="dialog"><button class="btn primary">Close</button></form>
+  </dialog>
 </body>
 </html>
