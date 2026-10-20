@@ -11,6 +11,8 @@
 //                            as aisstream.io-shaped messages so the page handles them the same way.
 // GET /api/photo?imo=9811000&name=EVER%20GIVEN   a photo of the ship, with the photographer's credit when needed.
 // GET /api/ship?imo=9811000  { mmsi, name, ships } of a ship known by its IMO number, to look for it worldwide.
+// GET /api/ship?mmsi=235009590,209479000   { ships: [{ mmsi, name, imo, flag, callsign, kind, lengthM }] }, up to 40,
+//                            to name and colour ships whose own name and type messages have not been heard (registry only).
 // GET /api/ship?name=OSCAR%20WILDE   { ships: [{ mmsi, name, imo, flag }] } with that name.
 //                            Global Fishing Watch's vessel identity registry when GFW_TOKEN is set, else Wikidata (IMO only).
 //
@@ -129,12 +131,8 @@ async function shipLookup(url, env) {
   const token = gfwToken(env);
   const imo = url.searchParams.get('imo') || '';
   const name = (url.searchParams.get('name') || '').toUpperCase().replace(/\s+/g, ' ').trim();
-  if (!token) return name ? json({ ships: [], source: null }) : shipByImo(url);
-  if (url.searchParams.has('rawwhere')) { // TEMPORARY: inspect the registry's answer while building the type lookup
-    const q = new URLSearchParams({ 'datasets[0]': 'public-global-vessel-identity:latest', limit: '5', where: url.searchParams.get('rawwhere') });
-    const r = await fetch(`${GFW}?${q}`, { headers: { Authorization: `Bearer ${token}` } });
-    return new Response((await r.text()).slice(0, 6000), { status: r.status, headers: { 'Content-Type': 'application/json' } });
-  }
+  if (!token) return name || url.searchParams.has('mmsi') ? json({ ships: [], source: null }) : shipByImo(url);
+  if (url.searchParams.has('mmsi')) return shipsByMmsi(url, token);
   if (imo && !/^\d{7}$/.test(imo)) return json({ error: 'imo must be 7 digits' }, 400);
   if (!imo && name.length < 3) return json({ error: 'give an imo number or a name' }, 400);
   const cache = caches.default;
@@ -166,6 +164,49 @@ async function shipLookup(url, env) {
   res.headers.set('Cache-Control', `public, max-age=${ships.length ? 86_400 : 3600}`);
   await cache.put(cacheKey, res.clone());
   return res;
+}
+
+// Registry identity of up to 40 ships at once. Each ship is cached on its own for a week, so busy areas cost few calls.
+const KINDS = [[/PASSENGER|FERRY|CRUISE/, 'passenger'], [/TANKER|BUNKER/, 'tanker'], [/FISH|TRAWL|LONGLINE|SEINE|SQUID|POT|GILL|TROLL/, 'fishing'],
+  [/CARGO|CARRIER|CONTAINER|BULK|REEFER/, 'cargo'], [/TUG|SUPPORT|PILOT|DREDG|SEISMIC|RESEARCH|PATROL/, 'service'], [/PLEASURE|YACHT|SAIL/, 'pleasure']];
+async function shipsByMmsi(url, token) {
+  const want = [...new Set((url.searchParams.get('mmsi') || '').split(',').filter((v) => /^\d{9}$/.test(v)))].slice(0, 40);
+  if (!want.length) return json({ error: 'give up to 40 MMSIs, comma separated' }, 400);
+  const cache = caches.default;
+  const key = (m) => new Request(`https://cache.ship-track/ship/mmsi/v1/${m}`);
+  const ships = [], missing = [];
+  await Promise.all(want.map(async (m) => {
+    const hit = await cache.match(key(m));
+    if (!hit) { missing.push(m); return; }
+    const v = await hit.json();
+    if (v.mmsi) ships.push(v);
+  }));
+  if (missing.length) {
+    const q = new URLSearchParams({ 'datasets[0]': 'public-global-vessel-identity:latest', limit: '50',
+      where: missing.map((m) => `ssvid = '${m}'`).join(' OR ') });
+    const r = await fetch(`${GFW}?${q}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) return json({ ships, error: `ship registry answered ${r.status}` });
+    const found = new Map();
+    for (const entry of (await r.json()).entries || []) {
+      const self = (entry.selfReportedInfo || []).filter((v) => missing.includes(v.ssvid))
+        .sort((a, b) => String(b.transmissionDateTo).localeCompare(String(a.transmissionDateTo)))[0];
+      const reg = (entry.registryInfo || []).find((v) => missing.includes(v.ssvid));
+      const m = self?.ssvid || reg?.ssvid;
+      if (!m || found.has(m)) continue;
+      const c = entry.combinedSourcesInfo?.[0] || {};
+      const types = [...(c.shiptypes || []).map((t) => t.name), ...(reg?.geartypes || [])].join(' ');
+      found.set(m, { mmsi: +m, name: self?.shipname || reg?.shipname || null, imo: +(self?.imo || reg?.imo) || null,
+        flag: self?.flag || reg?.flag || null, callsign: self?.callsign || reg?.callsign || null,
+        kind: KINDS.find(([re]) => re.test(types))?.[1] || null, lengthM: Math.round(c.bestLengthM?.[0]?.value || reg?.lengthM || 0) || null });
+    }
+    for (const m of missing) {
+      const v = found.get(m) || { mmsi: null };
+      if (v.mmsi) ships.push(v);
+      // Unknown ships are asked again after a day, known ones after a week.
+      await cache.put(key(m), json(v, 200, { 'Cache-Control': `public, max-age=${v.mmsi ? 7 * 86_400 : 86_400}` }));
+    }
+  }
+  return json({ ships, source: 'gfw' });
 }
 
 async function shipByImo(url) {

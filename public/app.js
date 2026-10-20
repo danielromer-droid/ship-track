@@ -617,7 +617,7 @@ function setPos(e, lat, lon, sog, cog, hdg, t) {
   }
   return true;
 }
-function setType(e, t) { if (t) { e.type = t; e.cat = catOf(t); } }
+function setType(e, t) { if (t) { e.type = t; e.cat = catOf(t); e.regType = false; } }
 function setDim(e, d) {
   if (!d) return;
   const v = [d.A, d.B, d.C, d.D].map((x) => +x || 0);
@@ -1152,6 +1152,40 @@ async function pollExtra() {
   } catch { /* the main feed carries on */ } finally { extraBusy = false; }
 }
 setInterval(pollExtra, 30_000);
+
+// Ships whose name and type messages have not been heard (they come every 6 minutes, and patchy reception
+// misses many) are looked up in the ship registry, so they show their name and colour straight away.
+const REG_TYPE = { passenger: 60, cargo: 70, tanker: 80, fishing: 30, service: 52, pleasure: 37 };
+const asked = new Set();
+let regBusy = false;
+async function fillFromRegistry() {
+  if (state.mode !== 'live' || document.hidden || regBusy) return;
+  const b = map.getBounds();
+  const ids = [];
+  for (const e of state.ships.values()) {
+    if (ids.length >= 40) break;
+    if (e.type || e.lat == null || asked.has(e.mmsi) || !b.contains([e.lon, e.lat])) continue;
+    ids.push(e.mmsi);
+  }
+  if (!ids.length) return;
+  regBusy = true;
+  ids.forEach((id) => asked.add(id));
+  try {
+    const { ships = [] } = await fetchJson(`/api/ship?mmsi=${ids.join(',')}`);
+    for (const v of ships) {
+      const e = state.ships.get(v.mmsi);
+      if (!e) continue;
+      if (!e.name && v.name) e.name = v.name;
+      if (!e.imo && v.imo) e.imo = v.imo;
+      if (!e.cs && v.callsign) e.cs = v.callsign;
+      if (!e.type && REG_TYPE[v.kind]) { setType(e, REG_TYPE[v.kind]); e.regType = true; }
+      if (e.mmsi === state.selected) panelDirty = true;
+    }
+    if (ships.length) draw();
+  } catch { asked.clear(); /* try again later */ } finally { regBusy = false; }
+}
+setInterval(fillFromRegistry, 10_000);
+map.on('moveend', () => { clearTimeout(fillFromRegistry.t); fillFromRegistry.t = setTimeout(fillFromRegistry, 3000); });
 map.on('moveend', () => { clearTimeout(pollExtra.t); pollExtra.t = setTimeout(pollExtra, 1500); });
 
 let lastMsgs = 0, lastRateAt = Date.now();
@@ -1309,7 +1343,7 @@ function renderPanel() {
     </button>
     <div>
       <h2 class="title">${esc(e.name || `MMSI ${e.mmsi}`)}</h2>
-      <div class="subtitle">${flagImg(f)}<span>${esc(typeLabel(e.type))}${e.imo ? ` <i>|</i> IMO ${e.imo}` : ''}</span><span class="badges" id="badges"></span></div>
+      <div class="subtitle">${flagImg(f)}<span>${esc(typeLabel(e.type))}${e.regType ? ' <small class="muted">(registry)</small>' : ''}${e.imo ? ` <i>|</i> IMO ${e.imo}` : ''}</span><span class="badges" id="badges"></span></div>
     </div>
     <figure class="photo" id="photo" hidden><div class="frame"><img alt=""></div><figcaption></figcaption></figure>
     <div class="tabs" role="tablist">${TABS.map(([k, label]) =>
