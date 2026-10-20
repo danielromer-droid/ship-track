@@ -130,6 +130,11 @@ async function shipLookup(url, env) {
   const imo = url.searchParams.get('imo') || '';
   const name = (url.searchParams.get('name') || '').toUpperCase().replace(/\s+/g, ' ').trim();
   if (!token) return name ? json({ ships: [], source: null }) : shipByImo(url);
+  if (url.searchParams.has('rawwhere')) { // TEMPORARY: inspect the registry's answer while building the type lookup
+    const q = new URLSearchParams({ 'datasets[0]': 'public-global-vessel-identity:latest', limit: '5', where: url.searchParams.get('rawwhere') });
+    const r = await fetch(`${GFW}?${q}`, { headers: { Authorization: `Bearer ${token}` } });
+    return new Response((await r.text()).slice(0, 6000), { status: r.status, headers: { 'Content-Type': 'application/json' } });
+  }
   if (imo && !/^\d{7}$/.test(imo)) return json({ error: 'imo must be 7 digits' }, 400);
   if (!imo && name.length < 3) return json({ error: 'give an imo number or a name' }, 400);
   const cache = caches.default;

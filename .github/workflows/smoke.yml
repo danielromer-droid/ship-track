@@ -36,6 +36,10 @@ jobs:
           for imo in 9866689 9811000; do
             echo "::notice title=ship $imo::$(curl -sS "${{ inputs.site }}/api/ship?imo=$imo" | head -c 500)"
           done
+          w=$(python3 -c "import urllib.parse;print(urllib.parse.quote(\"ssvid = '209479000' OR ssvid = '235009590'\"))")
+          curl -sS "${{ inputs.site }}/api/ship?rawwhere=$w" -o raw.json -w '%{http_code}\n'
+          echo "::notice title=ship raw keys::$(jq -c '{total, n: (.entries|length), keys: (.entries[0]|keys), combined: .entries[0].combinedSourcesInfo, self: (.entries[0].selfReportedInfo[0]|del(.matchFields)), reg: .entries[0].registryInfo[0], ssvids: [.entries[].selfReportedInfo[0].ssvid]}' raw.json 2>&1 | head -c 3500)"
+          echo "::notice title=ship raw text::$(head -c 1500 raw.json)"
           echo "::notice title=ship by name::$(curl -sS "${{ inputs.site }}/api/ship?name=OSCAR%20WILDE" | head -c 800)"
       - name: Extra free feeds
         run: |
