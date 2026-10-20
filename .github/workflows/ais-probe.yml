@@ -41,6 +41,8 @@ jobs:
           const want = process.env.SHIP.toUpperCase();
           const seen = new Map(), dests = new Map();
           let count = 0, statics = 0;
+          const ships = new Map(); // mmsi -> first minute heard
+          const t0 = Date.now();
           const ws = new WebSocket(process.env.SITE.replace(/^http/, 'ws') + '/api/stream');
           ws.binaryType = 'arraybuffer';
           ws.onerror = (err) => console.log('::warning::socket error ' + (err.message || ''));
@@ -52,6 +54,7 @@ jobs:
             const m = JSON.parse(typeof ev.data === 'string' ? ev.data : new TextDecoder().decode(ev.data));
             if (m.error) console.log('::warning::' + m.error);
             count++;
+            if (m.MetaData?.MMSI && !ships.has(m.MetaData.MMSI)) ships.set(m.MetaData.MMSI, Math.floor((Date.now() - t0) / 60000));
             if (count <= 2) console.log(`::notice title=message ${count}::${JSON.stringify(m).slice(0, 600)}`);
             if (only) {
               if (list.includes(m.MetaData?.MMSI) && (hits++ < 4 || m.MessageType === 'ShipStaticData')) console.log(`::notice title=${m.MetaData.MMSI} ${m.MessageType}::${JSON.stringify(m.MessageType === 'ShipStaticData' ? m.Message.ShipStaticData : m.MetaData).slice(0, 600)}`);
@@ -74,6 +77,8 @@ jobs:
             if (only && !hits) console.log(`::notice title=nothing::No message from MMSI ${only} anywhere in ${process.env.MINUTES} min`);
             if (!only && !seen.size) console.log(`::notice title=nothing::No static message from ${want} in ${process.env.MINUTES} min`);
             console.log(`::notice title=totals::${count} messages, ${statics} static messages`);
+            const byMin = [...ships.values()].reduce((a, v) => { a[v] = (a[v] || 0) + 1; return a; }, {});
+            console.log(`::notice title=distinct ships::${ships.size} ships heard; new ships per minute ${JSON.stringify(byMin)}`);
             console.log(`::notice title=sample destinations::${[...dests].map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' | ')}`);
             process.exit(0);
           }, process.env.MINUTES * 60_000);
