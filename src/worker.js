@@ -122,9 +122,11 @@ function cleanBoxes(boxes) {
 // ---------- a ship's MMSI from its IMO number ----------
 
 const GFW = 'https://gateway.api.globalfishingwatch.org/v3/vessels/search';
+// The secret is GFW_TOKEN; "GFW-TOKEN" is accepted too, as Cloudflare allows both spellings.
+const gfwToken = (env) => String(env.GFW_TOKEN || env['GFW-TOKEN'] || env.GFW_API_TOKEN || '').trim() || null;
 
 async function shipLookup(url, env) {
-  const token = env.GFW_TOKEN && String(env.GFW_TOKEN).trim();
+  const token = gfwToken(env);
   const imo = url.searchParams.get('imo') || '';
   const name = (url.searchParams.get('name') || '').toUpperCase().replace(/\s+/g, ' ').trim();
   if (!token) return name ? json({ ships: [], source: null }) : shipByImo(url);
@@ -189,6 +191,13 @@ async function health(url, env) {
   if (!key || !url.searchParams.has('check')) return json(out, 200, { 'Cache-Control': 'no-store' });
   out.keyLength = key.length;
   out.check = await probe(env.AISSTREAM_URL || UPSTREAM, key);
+  // Ship registry: which secret names look like it (names only, never values) and whether it answers.
+  out.gfw = { names: Object.keys(env).filter((k) => /gfw/i.test(k)), set: Boolean(gfwToken(env)) };
+  if (out.gfw.set) {
+    const r = await fetch(`${GFW}?datasets[0]=public-global-vessel-identity:latest&limit=1&query=EVER%20GIVEN`,
+      { headers: { Authorization: `Bearer ${gfwToken(env)}` } }).catch((err) => ({ status: err.message }));
+    out.gfw.status = r.status;
+  }
   return json(out, 200, { 'Cache-Control': 'no-store' });
 }
 
