@@ -952,6 +952,34 @@ function originText(dest) {
   return codes.length >= 2 && codes[0][0] !== codes[codes.length - 1][0] ? codes[0][0] : null;
 }
 
+// Scheduled crossings from the ferry operators' own open timetables (tools/make_ferries.py).
+// Kept apart from AIS: they say when a crossing is due, never where a ship is.
+let ferriesP = null, ferries = null;
+function ferryData() {
+  return (ferriesP ||= fetchJson('data/ferries.json').then((d) => (ferries = d)).catch(() => (ferries = { ports: {}, sailings: [] })));
+}
+const MIN = 60_000;
+// The crossing this ship is most likely making: between the ports of its voyage, under way now,
+// and as far along in time as the ship is along the way.
+function timetableFor(e, p, now) {
+  if (!ferries?.sailings?.length || p?.status !== 'ok') return null;
+  const near = (key, place) => { const q = ferries.ports[key]; return q && place && km(q[1], q[2], place.lat, place.lon) < 15; };
+  const at = posNow(e, now);
+  let best = null, bestFit = 0.3;
+  for (const s of ferries.sailings) {
+    const dep = s[3] * MIN, arr = s[4] * MIN;
+    if (dep > now + 30 * MIN) break;
+    if (arr < now - 60 * MIN || !near(s[2], p.place) || (p.from && !near(s[1], p.from))) continue;
+    const a = ferries.ports[s[1]], b = ferries.ports[s[2]];
+    const sailed = km(a[1], a[2], at[0], at[1]), left = km(at[0], at[1], b[1], b[2]);
+    const fit = Math.abs(Math.min(1, Math.max(0, (now - dep) / (arr - dep))) - sailed / (sailed + left || 1));
+    if (fit < bestFit) { best = s; bestFit = fit; }
+  }
+  if (!best) return null;
+  const nexts = ferries.sailings.filter((s) => s[1] === best[1] && s[2] === best[2] && s[3] * MIN > now).slice(0, 3);
+  return { s: best, operator: ferries.operators[best[0]], from: ferries.ports[best[1]][0], to: ferries.ports[best[2]][0], nexts };
+}
+
 // One plan for the selected ship: its destination, and the lanes leading there.
 let plan = null;
 function planRoute(e) {
@@ -1296,6 +1324,7 @@ function renderPanel() {
         <div><small id="dep-label">Tracked since</small><span id="dep"></span></div>
         <div class="to"><small>Estimated time of arrival</small><span id="eta"></span><em id="countdown"></em></div>
       </div>
+      <div class="timetable" id="timetable" hidden></div>
       <div class="stats">
         <div>${icon('speed')}<span><small>Speed</small><b id="speed">–</b></span></div>
         <div>${icon('course')}<span><small>Course</small><b id="course">–</b></span></div>
@@ -1315,7 +1344,7 @@ function renderPanel() {
     </div>
     ${state.mode === 'live' ? `<a class="photos-link" href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:${e.mmsi}" target="_blank" rel="noopener">More photos and voyage details on MarineTraffic ↗</a>` : ''}
     <p class="note">${state.mode === 'demo' ? 'Simulated ship: real ships appear once the app runs on Cloudflare with an aisstream.io key.'
-      : 'AIS data from <a href="https://aisstream.io">aisstream.io</a> and, in the Baltic, Fintraffic / digitraffic.fi (CC BY 4.0). Ships do not broadcast where a voyage began unless the crew types it; the solid line is where the ship went since you opened the map, the dashed line an estimated sea route to its destination.'}</p>`;
+      : 'AIS data from <a href="https://aisstream.io">aisstream.io</a> and, in the Baltic, Fintraffic / digitraffic.fi (CC BY 4.0). Ferry timetables from Brittany Ferries, DFDS and Corsica Linea via transport.data.gouv.fr (Licence Ouverte 2.0). Ships do not broadcast where a voyage began unless the crew types it; the solid line is where the ship went since you opened the map, the dashed line an estimated sea route to its destination.'}</p>`;
 
   $('#close').onclick = deselect;
   $('#dest-box').onclick = showRoute;
@@ -1413,6 +1442,19 @@ function tickPanel(e) {
     : ok ? `Show route on the map · ${num(p.nm)} nm to go · crew typed “${e.dest}”`
     : p?.status === 'loading' ? 'Finding the port…' : p?.status === 'none' ? `“${e.dest}” is not a port we know, so no route` : '';
   $('#dest-box').disabled = !ok;
+  // The operator's timetable, for passenger ships on a route that publishes one.
+  if (e.cat === 'passenger' && ok && !ferries) ferryData().then(() => { panelDirty = true; });
+  const tt = e.cat === 'passenger' ? timetableFor(e, p, now) : null;
+  const ttEl = $('#timetable');
+  ttEl.hidden = !tt;
+  if (tt) {
+    const hm = (m) => new Date(m * MIN).toISOString().slice(11, 16);
+    const day = (m) => new Date(m * MIN).toLocaleDateString([], { weekday: 'short', timeZone: 'UTC' });
+    ttEl.innerHTML = `<small>Timetable · ${esc(tt.operator)}</small>
+      <span>${esc(tt.from)} ${hm(tt.s[3])} → ${esc(tt.to)} ${hm(tt.s[4])} UTC</span>
+      ${tt.nexts.length ? `<em>Next: ${tt.nexts.map((n) => `${day(n[3])} ${hm(n[3])}`).join(' · ')} UTC</em>` : ''}
+      <p>From the operator’s published timetable, not from the ship’s signal.</p>`;
+  }
 
   const nav = NAV[e.nav] || (e.sog >= 0.5 ? 'Under way' : e.sog != null ? 'Stopped' : null);
   const len = e.dim ? e.dim[0] + e.dim[1] : null, beam = e.dim ? e.dim[2] + e.dim[3] : null;

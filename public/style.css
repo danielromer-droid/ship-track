@@ -244,6 +244,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .times small { font-size: 12px; color: var(--muted); }
 .times span { font: 500 13px/1.35 var(--mono); white-space: nowrap; }
 .times em { font: 500 12px var(--mono); font-style: normal; color: var(--muted); }
+.timetable { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 12px; border: 1px dashed var(--line-strong); }
+.timetable[hidden] { display: none; }
+.timetable small { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.timetable span { font: 500 14px/1.35 var(--mono); }
+.timetable em { font: 500 12px var(--mono); font-style: normal; color: var(--muted); }
+.timetable p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .stats > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .stats > div + div { padding-left: 10px; border-left: 1px solid var(--line); }
