@@ -84,6 +84,7 @@ def build(feeds, today):
                 continue
             key = f'{op}:{s["stop_id"]}'
             stops[s['stop_id']] = key
+            stops.setdefault(s.get('stop_name', '').strip(), key)  # some feeds call stops by name in stop_times
             ports[key] = [s.get('stop_name', '').strip(), round(lat, 4), round(lon, 4)]
         routes = {r['route_id']: (r.get('route_long_name') or r.get('route_short_name') or '').strip() for r in rows(z, 'routes.txt')}
         days = service_days(z, today, end)
@@ -112,7 +113,7 @@ def build(feeds, today):
             trips = rows(z, 'trips.txt')
             print(f'{name}: files {z.namelist()}; {len(trips)} trips, {len(calls)} with stop times, services running {len(days)};'
                   f' calendar {rows(z, "calendar.txt")[:1]}; dates {rows(z, "calendar_dates.txt")[:2]}; trip {trips[:1]};'
-                  f' calls {next(iter(calls.values()), [])[:2]}', file=sys.stderr)
+                  f' calls {next(iter(calls.values()), [])[:2]}; stops {rows(z, "stops.txt")[:2]}', file=sys.stderr)
     sailings.sort(key=lambda s: s[3])
     used = {s[1] for s in sailings} | {s[2] for s in sailings}
     return {
