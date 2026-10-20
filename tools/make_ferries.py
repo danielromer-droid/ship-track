@@ -108,6 +108,11 @@ def build(feeds, today):
                 n += 1
         sources.append({'operator': name, 'page': page, 'licence': 'Licence Ouverte 2.0', 'sailings': n})
         print(f'{name}: {len(stops)} ports, {n} sailings', file=sys.stderr)
+        if not n:  # say why, to fix the reader
+            trips = rows(z, 'trips.txt')
+            print(f'{name}: files {z.namelist()}; {len(trips)} trips, {len(calls)} with stop times, services running {len(days)};'
+                  f' calendar {rows(z, "calendar.txt")[:1]}; dates {rows(z, "calendar_dates.txt")[:2]}; trip {trips[:1]};'
+                  f' calls {next(iter(calls.values()), [])[:2]}', file=sys.stderr)
     sailings.sort(key=lambda s: s[3])
     used = {s[1] for s in sailings} | {s[2] for s in sailings}
     return {
