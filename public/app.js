@@ -201,13 +201,16 @@ const map = new maplibregl.Map({
   ] },
 });
 mapStyle = isDark() ? STYLES.dark : STYLES.light;
-map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+// Bottom-right controls stack upwards in the order added: locate me, full screen, zoom, then the overlays.
 map.touchZoomRotate.disableRotation();
 map.keyboard.disableRotation();
 const geolocate = new maplibregl.GeolocateControl({
   trackUserLocation: true, showUserLocation: true, positionOptions: { enableHighAccuracy: true }, fitBoundsOptions: { maxZoom: 10 },
 });
 map.addControl(geolocate, 'bottom-right');
+// The whole app, panel included, fills the screen.
+map.addControl(new maplibregl.FullscreenControl({ container: document.body }), 'bottom-right');
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 map.addControl(new maplibregl.ScaleControl({ unit: 'nautical', maxWidth: 120 }), 'bottom-left');
 new ResizeObserver(() => map.resize()).observe($('#map'));
 darkQuery.addEventListener('change', () => applyTheme());
@@ -335,6 +338,15 @@ map.addControl({
   onRemove() {},
 }, 'bottom-right');
 
+// Elevation tiles: Mapzen Terrarium on AWS Open Data (free, no key).
+const DEM = { type: 'raster-dem', encoding: 'terrarium', tileSize: 256, maxzoom: 13,
+  tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+  attribution: 'Relief: <a href="https://registry.opendata.aws/terrain-tiles/">Mapzen Terrain Tiles</a>' };
+const RELIEF = {
+  light: { 'hillshade-exaggeration': 0.75, 'hillshade-shadow-color': '#4A4436', 'hillshade-highlight-color': '#FFFFFF', 'hillshade-accent-color': '#6B6250' },
+  dark: { 'hillshade-exaggeration': 0.7, 'hillshade-shadow-color': '#000000', 'hillshade-highlight-color': '#8A94A3', 'hillshade-accent-color': '#20252C' },
+};
+
 function toggleOverlay(key) {
   overlays[key] = !overlays[key];
   try { localStorage.setItem('overlays', JSON.stringify(overlays)); } catch { /* not remembered */ }
@@ -349,6 +361,12 @@ function addOverlays() {
   if (!map.getLayer('ships-still')) return; // style still loading; 'style.load' calls us again
   const firstLabel = map.getStyle().layers.find((l) => l.type === 'symbol' && !l.id.startsWith('ships'));
   const ours = 'track';
+  // Relief shading so hills and mountains stand out (hidden under the satellite view, which has its own).
+  if (!map.getSource('dem')) map.addSource('dem', DEM);
+  if (!map.getLayer('relief')) {
+    map.addLayer({ id: 'relief', type: 'hillshade', source: 'dem', paint: RELIEF[isDark() ? 'dark' : 'light'] }, firstLabel?.id || ours);
+  }
+  map.setLayoutProperty('relief', 'visibility', overlays.satellite ? 'none' : 'visible');
   if (overlays.satellite && !map.getLayer('satellite')) {
     if (!map.getSource('satellite')) map.addSource('satellite', SATELLITE);
     map.addLayer({ id: 'satellite', type: 'raster', source: 'satellite' }, firstLabel?.id || ours);

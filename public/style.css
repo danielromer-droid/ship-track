@@ -326,6 +326,24 @@ dialog.info .btn { flex: none; padding: 0 24px; }
 
 /* MapLibre controls in our colours */
 .maplibregl-ctrl-group { background: var(--ctrl-bg); border: 1px solid var(--ctrl-border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+/* Map buttons: separate round buttons, dark with white icons, readable over land, sea and satellite. */
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group { display: flex; flex-direction: column; gap: 10px; background: none; border: 0; box-shadow: none; overflow: visible; }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button {
+  width: 46px; height: 46px; border-radius: 23px; border: 0 !important; background-color: rgba(48, 52, 58, .9); color: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .25); display: grid; place-items: center;
+}
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:hover { background-color: rgba(30, 33, 38, .95); }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button + button { border-top: 0; }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: none !important; background-size: 24px 24px; width: 24px; height: 24px; }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button.maplibregl-ctrl-zoom-out .maplibregl-ctrl-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 12h14'/%3E%3C/svg%3E"); }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button.maplibregl-ctrl-fullscreen .maplibregl-ctrl-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5M4 4l6 6M20 4l-6 6M4 20l6-6M20 20l-6-6'/%3E%3C/svg%3E"); }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button.maplibregl-ctrl-shrink .maplibregl-ctrl-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5'/%3E%3C/svg%3E"); }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button.maplibregl-ctrl-geolocate .maplibregl-ctrl-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M20 4L4 11l7 2 2 7z'/%3E%3C/svg%3E"); }
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button.maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-active .maplibregl-ctrl-icon,
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button.maplibregl-ctrl-geolocate.maplibregl-ctrl-geolocate-background .maplibregl-ctrl-icon { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234C8DFF' stroke='%234C8DFF' stroke-width='1.8' stroke-linejoin='round'%3E%3Cpath d='M20 4L4 11l7 2 2 7z'/%3E%3C/svg%3E"); }
+.maplibregl-ctrl-bottom-right .overlay-ctrl button { color: #FFFFFF; }
+.maplibregl-ctrl-bottom-right .overlay-ctrl button[aria-pressed="true"] { background-color: var(--ontime); }
 .maplibregl-ctrl-group button { width: 44px; height: 44px; }
 .maplibregl-ctrl-group button + button { border-top: 1px solid var(--ctrl-border); }
 .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: var(--ctrl-icon-filter); }
