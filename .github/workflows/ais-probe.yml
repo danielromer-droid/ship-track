@@ -11,6 +11,9 @@ on:
       box:
         description: Area as south,west,north,east
         default: 50.5,0.8,51.4,2.6
+      imo:
+        description: Look this IMO up in the ship registry, then listen for its MMSIs worldwide
+        default: ''
       mmsi:
         description: Only this MMSI, anywhere in the world (leave empty to use ship and box)
         default: ''
@@ -32,6 +35,7 @@ jobs:
         env:
           SHIP: ${{ inputs.ship }}
           MMSI: ${{ inputs.mmsi }}
+          IMO: ${{ inputs.imo }}
           BOX: ${{ inputs.box }}
           MINUTES: ${{ inputs.minutes }}
           SITE: ${{ inputs.site }}
@@ -47,7 +51,14 @@ jobs:
           ws.binaryType = 'arraybuffer';
           ws.onerror = (err) => console.log('::warning::socket error ' + (err.message || ''));
           ws.onclose = (ev) => console.log(`::warning::socket closed ${ev.code} ${ev.reason}`);
-          const list = (process.env.MMSI || '').split(',').map(Number).filter(Boolean), only = list[0] || 0;
+          const list = (process.env.MMSI || '').split(',').map(Number).filter(Boolean);
+          if (process.env.IMO) {
+            const reg = await (await fetch(`${process.env.SITE}/api/ship?imo=${process.env.IMO}`)).json();
+            console.log(`::notice title=registry IMO ${process.env.IMO}::${JSON.stringify(reg).slice(0, 900)}`);
+            for (const v of reg.ships || []) if (v.mmsi) list.push(v.mmsi);
+            if (!reg.ships && reg.mmsi) list.push(reg.mmsi);
+          }
+          const only = list[0] || 0;
           let hits = 0;
           ws.onopen = () => ws.send(JSON.stringify(only ? { boxes: [[[-90, -180], [90, 180]]], mmsi: list } : { boxes: [[[s, w], [n, e]]] }));
           ws.onmessage = (ev) => {
