@@ -419,8 +419,11 @@ dialog.info .btn { flex: none; padding: 0 24px; }
   background: var(--surface); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px;
 }
 .cam[hidden] { display: none; }
+.cam.big { width: min(1100px, calc(100% - 112px), calc((100vh - 330px) * 16 / 9)); bottom: 110px; z-index: 7; }
+.cam.big #cam-size svg path { d: path('M4 10h6V4M20 14h-6v6M10 10L3 3M14 14l7 7'); }
 .cam header { display: flex; align-items: center; gap: 8px; }
 .cam header strong { flex: 1; font: 600 15px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cam header button + button { margin-left: -4px; }
 .cam header button { width: 32px; height: 32px; border: 0; border-radius: 16px; background: var(--surface-2); color: var(--ink); display: grid; place-items: center; cursor: pointer; }
 .cam .live { padding: 2px 8px; border-radius: 6px; background: #E5484D; color: #FFFFFF; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .cam-video { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: #000; }
@@ -431,5 +434,6 @@ dialog.info .btn { flex: none; padding: 0 24px; }
 .cam a { color: var(--accent); white-space: nowrap; }
 @media (max-width: 720px) {
   .cam { left: 12px; right: 12px; width: auto; top: calc(env(safe-area-inset-top) + 120px); bottom: auto; z-index: 6; }
+  .cam.big { left: 0; right: 0; width: auto; top: env(safe-area-inset-top); bottom: auto; border-radius: 0 0 16px 16px; z-index: 8; }
 }
 

@@ -2095,9 +2095,17 @@ function openCam(c) {
 }
 function closeCam() {
   camBox.hidden = true;
+  sizeCam(false);
   $('#cam-frame').src = 'about:blank'; // stops the video and its download
 }
 $('#cam-close').addEventListener('click', closeCam);
+// The window can grow to a large view and back; the video keeps playing either way.
+function sizeCam(big) {
+  camBox.classList.toggle('big', big);
+  $('#cam-size').setAttribute('aria-pressed', String(big));
+  $('#cam-size').setAttribute('aria-label', big ? 'Make the webcam smaller' : 'Enlarge the webcam');
+}
+$('#cam-size').addEventListener('click', () => sizeCam(!camBox.classList.contains('big')));
 // Camera spots show once the nautical scale bar reads 5 nm or less, so they don't crowd the
 // coast when zoomed out.
 function showCams() {
