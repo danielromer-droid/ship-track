@@ -403,3 +403,29 @@ dialog.info .btn { flex: none; padding: 0 24px; }
   .panel:not(.expanded) .pane[data-pane="voyage"] { display: flex; }
   body.has-panel .status { display: none; }
 }
+
+/* Live webcams: a red spot on the coast, and a small video window */
+.cam-dot { display: inline-block; width: 12px; height: 12px; border-radius: 6px; background: #E5484D; box-shadow: 0 0 0 2px #FFFFFF; flex: none; }
+.legend .cam-dot { margin: 0 2px; }
+.cam-marker { width: 28px; height: 28px; border: 0; padding: 0; border-radius: 14px; background: #E5484D; color: #FFFFFF; display: grid; place-items: center;
+  box-shadow: 0 0 0 2px #FFFFFF, 0 2px 6px rgba(0, 0, 0, .35); cursor: pointer; }
+.cam-marker::after { content: ''; position: absolute; inset: -6px; border-radius: 20px; border: 2px solid #E5484D; animation: cam-pulse 2s ease-out infinite; pointer-events: none; }
+@keyframes cam-pulse { from { transform: scale(.7); opacity: .9; } to { transform: scale(1.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .cam-marker::after { animation: none; opacity: 0; } }
+.cam {
+  position: absolute; left: 16px; bottom: 150px; z-index: 5; width: min(420px, calc(100% - 96px)); padding: 10px; border-radius: 16px;
+  background: var(--surface); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px;
+}
+.cam[hidden] { display: none; }
+.cam header { display: flex; align-items: center; gap: 8px; }
+.cam header strong { flex: 1; font: 600 15px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cam header button { width: 32px; height: 32px; border: 0; border-radius: 16px; background: var(--surface-2); color: var(--ink); display: grid; place-items: center; cursor: pointer; }
+.cam .live { padding: 2px 8px; border-radius: 6px; background: #E5484D; color: #FFFFFF; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.cam-video { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: #000; }
+.cam-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.cam p { margin: 0; font-size: 12px; color: var(--muted); }
+.cam a { color: var(--accent); white-space: nowrap; }
+@media (max-width: 720px) {
+  .cam { left: 12px; right: 12px; width: auto; top: calc(env(safe-area-inset-top) + 120px); bottom: auto; z-index: 6; }
+}
+

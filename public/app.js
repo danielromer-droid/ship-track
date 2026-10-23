@@ -2067,3 +2067,32 @@ for (const b of menu.querySelectorAll('[data-info]')) {
 // A click on the dark backdrop closes the window too.
 for (const d of document.querySelectorAll('dialog.info')) d.addEventListener('click', (ev) => { if (ev.target === d) d.close(); });
 
+// ---------- live webcams on the coast ----------
+
+const camBox = $('#cam');
+function openCam(c) {
+  $('#cam-name').textContent = c.name;
+  $('#cam-about').textContent = c.about || '';
+  $('#cam-link').href = `https://www.youtube.com/watch?v=${c.youtube}`;
+  // Muted so browsers allow it to start on its own; the player's own button turns the sound on.
+  $('#cam-frame').src = `https://www.youtube-nocookie.com/embed/${c.youtube}?autoplay=1&mute=1&playsinline=1&rel=0`;
+  camBox.hidden = false;
+}
+function closeCam() {
+  camBox.hidden = true;
+  $('#cam-frame').src = 'about:blank'; // stops the video and its download
+}
+$('#cam-close').addEventListener('click', closeCam);
+fetchJson('data/webcams.json').then((cams) => {
+  for (const c of cams) {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'cam-marker';
+    el.title = `Live webcam: ${c.name}`;
+    el.setAttribute('aria-label', `Live webcam: ${c.name}`);
+    el.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3z"/></svg>';
+    el.addEventListener('click', (ev) => { ev.stopPropagation(); openCam(c); });
+    new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(map);
+  }
+}).catch(() => { /* no webcams, the map works without them */ });
+
