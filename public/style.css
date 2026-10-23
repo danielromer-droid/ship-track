@@ -351,7 +351,8 @@ dialog.info .btn { flex: none; padding: 0 24px; }
 .maplibregl-ctrl.maplibregl-ctrl-attrib { background: var(--surface); color: var(--muted); }
 .maplibregl-ctrl-attrib a { color: var(--muted); }
 .maplibregl-ctrl-attrib-button { filter: var(--ctrl-icon-filter); }
-.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale { margin: 0 0 64px 16px; }
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale { margin: 0 0 4px 16px; }
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale:last-of-type { margin-bottom: 64px; }
 .maplibregl-ctrl-scale {
   border: 2px solid var(--ink); border-top: 0; background: var(--surface); color: var(--ink);
   font: 500 11px var(--mono); padding: 1px 6px; opacity: .9;
@@ -409,6 +410,7 @@ dialog.info .btn { flex: none; padding: 0 24px; }
 .legend .cam-dot { margin: 0 2px; }
 .cam-marker { width: 28px; height: 28px; border: 0; padding: 0; border-radius: 14px; background: #E5484D; color: #FFFFFF; display: grid; place-items: center;
   box-shadow: 0 0 0 2px #FFFFFF, 0 2px 6px rgba(0, 0, 0, .35); cursor: pointer; }
+.cams-far .cam-marker { display: none; }
 .cam-marker::after { content: ''; position: absolute; inset: -6px; border-radius: 20px; border: 2px solid #E5484D; animation: cam-pulse 2s ease-out infinite; pointer-events: none; }
 @keyframes cam-pulse { from { transform: scale(.7); opacity: .9; } to { transform: scale(1.4); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .cam-marker::after { animation: none; opacity: 0; } }
@@ -423,6 +425,8 @@ dialog.info .btn { flex: none; padding: 0 24px; }
 .cam .live { padding: 2px 8px; border-radius: 6px; background: #E5484D; color: #FFFFFF; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .cam-video { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: #000; }
 .cam-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.cam-video iframe[hidden], .cam-video a[hidden] { display: none; }
+.cam-video img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .cam p { margin: 0; font-size: 12px; color: var(--muted); }
 .cam a { color: var(--accent); white-space: nowrap; }
 @media (max-width: 720px) {

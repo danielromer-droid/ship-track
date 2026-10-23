@@ -33,7 +33,7 @@ jobs:
           echo "::notice title=site extra::$(jq -c '{n: (.messages|length), types: ([.messages[].MessageType] | group_by(.) | map({(.[0]): length}) | add), sample: .messages[1]}' extra.json | head -c 1500)"
       - name: Webcams can be embedded
         run: |
-          for id in $(curl -sS "${{ inputs.site }}/data/webcams.json" | jq -r '.[].youtube'); do
+          for id in $(curl -sS "${{ inputs.site }}/data/webcams.json" | jq -r '.[].youtube // empty'); do
             code=$(curl -sS -o oe.json -w '%{http_code}' "https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v=$id")
             echo "::notice title=webcam $id::oEmbed $code $(jq -c '{title, author_name}' oe.json 2>/dev/null)"
           done

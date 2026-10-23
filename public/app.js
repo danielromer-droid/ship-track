@@ -211,6 +211,8 @@ map.addControl(geolocate, 'bottom-right');
 // The whole app, panel included, fills the screen.
 map.addControl(new maplibregl.FullscreenControl({ container: document.body }), 'bottom-right');
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+// Two scale bars: nautical miles on top, kilometres below.
+map.addControl(new maplibregl.ScaleControl({ unit: 'metric', maxWidth: 120 }), 'bottom-left');
 map.addControl(new maplibregl.ScaleControl({ unit: 'nautical', maxWidth: 120 }), 'bottom-left');
 new ResizeObserver(() => map.resize()).observe($('#map'));
 darkQuery.addEventListener('change', () => applyTheme());
@@ -2073,9 +2075,22 @@ const camBox = $('#cam');
 function openCam(c) {
   $('#cam-name').textContent = c.name;
   $('#cam-about').textContent = c.about || '';
-  $('#cam-link').href = `https://www.youtube.com/watch?v=${c.youtube}`;
-  // Muted so browsers allow it to start on its own; the player's own button turns the sound on.
-  $('#cam-frame').src = `https://www.youtube-nocookie.com/embed/${c.youtube}?autoplay=1&mute=1&playsinline=1&rel=0`;
+  const link = $('#cam-link'), still = $('#cam-still'), frame = $('#cam-frame');
+  link.href = c.youtube ? `https://www.youtube.com/watch?v=${c.youtube}` : c.page;
+  link.textContent = `${c.youtube ? 'Open on YouTube' : c.image ? `Watch live on ${c.site}` : `Open on ${c.site}`} ↗`;
+  $('#cam-kind').textContent = c.image ? 'Latest' : 'Live';
+  // Some webcam sites refuse to play inside other pages; those show their latest picture instead.
+  still.hidden = !c.image;
+  frame.hidden = !!c.image;
+  if (c.image) {
+    still.href = c.page;
+    still.firstChild.src = `${c.image}?t=${Date.now()}`;
+    still.firstChild.alt = `Latest picture from the ${c.name} webcam`;
+    frame.src = 'about:blank';
+  } else {
+    // Muted so browsers allow it to start on its own; the player's own button turns the sound on.
+    frame.src = c.youtube ? `https://www.youtube-nocookie.com/embed/${c.youtube}?autoplay=1&mute=1&playsinline=1&rel=0` : c.embed;
+  }
   camBox.hidden = false;
 }
 function closeCam() {
@@ -2083,6 +2098,14 @@ function closeCam() {
   $('#cam-frame').src = 'about:blank'; // stops the video and its download
 }
 $('#cam-close').addEventListener('click', closeCam);
+// Camera spots show once the nautical scale bar reads 5 nm or less, so they don't crowd the
+// coast when zoomed out.
+function showCams() {
+  const lat = map.getCenter().lat * Math.PI / 180;
+  const metresPerPx = 40075016.7 * Math.cos(lat) / (512 * 2 ** map.getZoom());
+  map.getContainer().classList.toggle('cams-far', metresPerPx * 120 >= 10 * 1852);
+}
+map.on('zoom', showCams);
 fetchJson('data/webcams.json').then((cams) => {
   for (const c of cams) {
     const el = document.createElement('button');
@@ -2093,6 +2116,8 @@ fetchJson('data/webcams.json').then((cams) => {
     el.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3z"/></svg>';
     el.addEventListener('click', (ev) => { ev.stopPropagation(); openCam(c); });
     new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(map);
+    el.setAttribute('aria-label', `Live webcam: ${c.name}`); // the marker replaces it with "Map marker"
   }
+  showCams();
 }).catch(() => { /* no webcams, the map works without them */ });
 

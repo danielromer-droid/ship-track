@@ -77,9 +77,9 @@
       </div>
       <button type="button" id="pointing" class="pointing" hidden title="Fly to this ship"></button>
       <section id="cam" class="cam" aria-label="Live webcam" hidden>
-        <header><span class="live">Live</span><strong id="cam-name"></strong><button type="button" id="cam-close" aria-label="Close the webcam">
+        <header><span class="live" id="cam-kind">Live</span><strong id="cam-name"></strong><button type="button" id="cam-close" aria-label="Close the webcam">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
-        <div class="cam-video"><iframe id="cam-frame" title="Live webcam" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+        <div class="cam-video"><iframe id="cam-frame" title="Live webcam" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe><a id="cam-still" target="_blank" rel="noopener" hidden><img alt=""></a></div>
         <p><span id="cam-about"></span> <a id="cam-link" target="_blank" rel="noopener">Open on YouTube ↗</a></p>
       </section>
       <div id="hunt" class="pointing hunt" role="status" hidden><span></span><button type="button" id="hunt-stop" aria-label="Stop looking">
@@ -112,7 +112,7 @@
     <p>Ship Track has no accounts, no advertising and no tracking cookies.</p>
     <p>Your map view, theme and recently seen ships are kept only in your own browser, so the map opens where you left it. You can clear them at any time by clearing this site's data in your browser.</p>
     <p>If you use "locate me", your position and compass direction stay on your device and are never sent to us. To open the map near you, our server uses the country your connection comes from, without storing it.</p>
-    <p>Webcam videos play from YouTube only when you open one, and YouTube then receives your IP address.</p>
+    <p>Webcam videos and pictures load from the webcam’s own site (YouTube, Viewsurf or SkylineWebcams) only when you open one, and that site then receives your IP address.</p>
     <p>The map loads data from other services (map tiles, ship photos, and weather when that layer is on), which receive your IP address as for any web page. The weather service also receives the approximate centre of the map.</p>
     <form method="dialog"><button class="btn primary">Close</button></form>
   </dialog>
