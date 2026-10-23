@@ -2106,14 +2106,6 @@ function sizeCam(big) {
   $('#cam-size').setAttribute('aria-label', big ? 'Make the webcam smaller' : 'Enlarge the webcam');
 }
 $('#cam-size').addEventListener('click', () => sizeCam(!camBox.classList.contains('big')));
-// Camera spots show once the nautical scale bar reads 5 nm or less, so they don't crowd the
-// coast when zoomed out.
-function showCams() {
-  const lat = map.getCenter().lat * Math.PI / 180;
-  const metresPerPx = 40075016.7 * Math.cos(lat) / (512 * 2 ** map.getZoom());
-  map.getContainer().classList.toggle('cams-far', metresPerPx * 120 >= 10 * 1852);
-}
-map.on('zoom', showCams);
 fetchJson('data/webcams.json').then((cams) => {
   for (const c of cams) {
     const el = document.createElement('button');
@@ -2126,6 +2118,5 @@ fetchJson('data/webcams.json').then((cams) => {
     new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(map);
     el.setAttribute('aria-label', `Live webcam: ${c.name}`); // the marker replaces it with "Map marker"
   }
-  showCams();
 }).catch(() => { /* no webcams, the map works without them */ });
 

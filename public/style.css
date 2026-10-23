@@ -410,7 +410,6 @@ dialog.info .btn { flex: none; padding: 0 24px; }
 .legend .cam-dot { margin: 0 2px; }
 .cam-marker { width: 28px; height: 28px; border: 0; padding: 0; border-radius: 14px; background: #E5484D; color: #FFFFFF; display: grid; place-items: center;
   box-shadow: 0 0 0 2px #FFFFFF, 0 2px 6px rgba(0, 0, 0, .35); cursor: pointer; }
-.cams-far .cam-marker { display: none; }
 .cam-marker::after { content: ''; position: absolute; inset: -6px; border-radius: 20px; border: 2px solid #E5484D; animation: cam-pulse 2s ease-out infinite; pointer-events: none; }
 @keyframes cam-pulse { from { transform: scale(.7); opacity: .9; } to { transform: scale(1.4); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .cam-marker::after { animation: none; opacity: 0; } }
