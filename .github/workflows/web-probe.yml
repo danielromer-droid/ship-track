@@ -11,6 +11,9 @@ on:
       grep:
         description: Extra pattern to look for
         default: 'm3u8|youtube|embed|iframe|player'
+      referer:
+        description: Referer to send, as a page framing it would
+        default: ''
 
 jobs:
   probe:
@@ -20,8 +23,9 @@ jobs:
         env:
           URL: ${{ inputs.url }}
           PAT: ${{ inputs.grep }}
+          REF: ${{ inputs.referer }}
         run: |
-          code=$(curl -sSL -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130 Safari/537.36' -D h.txt -o p.html -w '%{http_code} %{size_download} %{url_effective}' "$URL")
+          code=$(curl -sSL -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130 Safari/537.36' ${REF:+-e "$REF"} -D h.txt -o p.html -w '%{http_code} %{size_download} %{url_effective}' "$URL")
           echo "::notice title=status::$code"
           echo "::notice title=framing::$(grep -iE '^(x-frame-options|content-security-policy):' h.txt | tr -d '\r' | tr '\n' ' ' | head -c 1500)"
           grep -oiE ".{0,120}($PAT).{0,160}" p.html | sort -u | head -40 | while read -r l; do echo "::notice title=match::$(echo "$l" | head -c 600)"; done
