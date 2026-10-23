@@ -1,0 +1,27 @@
+name: Web probe
+
+# Fetches a page from outside the container (whose proxy blocks most sites) and reports whether
+# it may be shown in a frame, plus any video or embed links found in it.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Page to fetch
+        required: true
+      grep:
+        description: Extra pattern to look for
+        default: 'm3u8|youtube|embed|iframe|player'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch
+        env:
+          URL: ${{ inputs.url }}
+          PAT: ${{ inputs.grep }}
+        run: |
+          code=$(curl -sSL -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130 Safari/537.36' -D h.txt -o p.html -w '%{http_code} %{size_download} %{url_effective}' "$URL")
+          echo "::notice title=status::$code"
+          echo "::notice title=framing::$(grep -iE '^(x-frame-options|content-security-policy):' h.txt | tr -d '\r' | tr '\n' ' ' | head -c 1500)"
+          grep -oiE ".{0,120}($PAT).{0,160}" p.html | sort -u | head -40 | while read -r l; do echo "::notice title=match::$(echo "$l" | head -c 600)"; done
