@@ -2075,15 +2075,12 @@ const camBox = $('#cam');
 function openCam(c) {
   $('#cam-name').textContent = c.name;
   $('#cam-about').textContent = c.about || '';
-  const link = $('#cam-link'), still = $('#cam-still'), frame = $('#cam-frame');
-  link.href = c.youtube ? `https://www.youtube.com/watch?v=${c.youtube}` : c.page;
-  link.textContent = `${c.youtube ? 'Open on YouTube' : c.image ? `Watch live on ${c.site}` : `Open on ${c.site}`} ↗`;
+  const still = $('#cam-still'), frame = $('#cam-frame');
   $('#cam-kind').textContent = c.image ? 'Latest' : 'Live';
   // Some webcam sites refuse to play inside other pages; those show their latest picture instead.
   still.hidden = !c.image;
   frame.hidden = !!c.image;
   if (c.image) {
-    still.href = c.page;
     still.firstChild.src = `${c.image}?t=${Date.now()}`;
     still.firstChild.alt = `Latest picture from the ${c.name} webcam`;
     frame.src = 'about:blank';
