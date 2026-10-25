@@ -32,7 +32,7 @@ export default {
       if (url.pathname === '/api/ship') return shipLookup(url, env);
       if (url.pathname === '/api/extra') return await extra(url, ctx);
       if (url.pathname === '/api/photo') return await photo(url, ctx);
-      if (url.pathname === '/api/sailings') return await sailings(ctx);
+      if (url.pathname === '/api/sailings') return await sailings(env);
     } catch (err) {
       return json({ error: err.message }, 502);
     }
@@ -409,11 +409,20 @@ async function cachedJson(ctx, url, seconds) {
   return JSON.parse(text);
 }
 
-// ---------- P&O Dover–Calais sailings, by ship ----------
-// Read from the schedule P&O shows on its own site, at most once an hour per direction, and
-// returned in the shape of data/ferries.json plus the ship's name on each sailing.
+// ---------- Ferry sailings by ship: P&O and Irish Ferries ----------
+// Read from the schedules the operators show on their own sites, at most once an hour each, and
+// returned in the shape of data/ferries.json plus the ship's name (and any delay) on each sailing.
 const PO_ROUTES = [['DOCA', 'Europe/London', 'Europe/Paris'], ['CADO', 'Europe/Paris', 'Europe/London']];
 const PO_PORTS = { DVR: ['Dover', 51.126, 1.329], CQF: ['Calais', 50.966, 1.864] };
+const UA = 'ship-track (github.com/danielromer-droid/ship-track)';
+const IF_PAGES = ['dover-calais', 'dublin-holyhead', 'rosslare-pembroke', 'ireland-france'];
+const IF_PORTS = {
+  Dover: [51.126, 1.329, 'Europe/London'], Calais: [50.966, 1.864, 'Europe/Paris'], Dublin: [53.347, -6.195, 'Europe/Dublin'],
+  Holyhead: [53.311, -4.627, 'Europe/London'], Rosslare: [52.252, -6.334, 'Europe/Dublin'], Pembroke: [51.684, -4.949, 'Europe/London'],
+  Cherbourg: [49.650, -1.617, 'Europe/Paris'], Roscoff: [48.720, -3.966, 'Europe/Paris'],
+};
+// Irish Ferries ships also appear in P&O's Dover–Calais schedule, which they share.
+const IRISH_SHIP = /INISHMORE|OSCAR WILDE|ULYSSES|YEATS|JAMES JOYCE|INNISFREE|ISLE OF/i;
 
 // "2026-10-25T17:20:00" in a time zone, as minutes since 1970.
 function localMinutes(text, tz) {
@@ -429,31 +438,112 @@ function localMinutes(text, tz) {
   return Math.round(t / 60000);
 }
 
-async function sailings(ctx) {
+async function hourlyCached(key, load) {
+  const req = new Request(`https://cache.ship-track/${key}&h=${Math.floor(Date.now() / 3600000)}`);
+  const hit = await caches.default.match(req);
+  if (hit) return hit.json();
+  const data = await load();
+  await caches.default.put(req, new Response(JSON.stringify(data), { headers: { 'Cache-Control': 'public, max-age=3600' } }));
+  return data;
+}
+
+async function poSailings() {
   const hour = Math.floor(Date.now() / 3600000) * 3600000;
   const iso = (t) => new Date(t).toISOString().slice(0, 19) + 'Z';
-  const out = { operators: ['P&O Ferries'], ports: {}, sailings: [] };
-  await Promise.all(PO_ROUTES.map(async ([route, depTz, arrTz]) => {
-    const key = new Request(`https://cache.ship-track/po?r=${route}&h=${hour}`);
-    let hit = await caches.default.match(key), list;
-    if (hit) list = await hit.json();
-    else {
-      const res = await fetch(`https://www.pofreight.com/api/sailings?route=${route}&start=${iso(hour - 6 * 3600000)}&end=${iso(hour + 72 * 3600000)}`,
-        { headers: { Accept: 'application/json', 'User-Agent': 'ship-track (github.com/danielromer-droid/ship-track)' } });
-      if (!res.ok) return;
-      list = await res.json().catch(() => []);
-      if (!Array.isArray(list)) return;
-      ctx.waitUntil(caches.default.put(key, new Response(JSON.stringify(list), { headers: { 'Cache-Control': 'public, max-age=3600' } })));
-    }
-    for (const v of list) {
+  const out = [];
+  await Promise.all(PO_ROUTES.map(([route, depTz, arrTz]) => hourlyCached(`po?r=${route}`, async () => {
+    const res = await fetch(`https://www.pofreight.com/api/sailings?route=${route}&start=${iso(hour - 6 * 3600000)}&end=${iso(hour + 72 * 3600000)}`,
+      { headers: { Accept: 'application/json', 'User-Agent': UA } });
+    const list = res.ok ? await res.json().catch(() => []) : [];
+    if (!Array.isArray(list)) return [];
+    return list.flatMap((v) => {
       const a = PO_PORTS[v.departurePortCode], b = PO_PORTS[v.arrivalPortCode];
       const dep = localMinutes(v.departureDateTimeLocalToPort, depTz), arr = localMinutes(v.arrivalDateTimeLocalToPort, arrTz);
-      if (!a || !b || dep == null || arr == null || /cancel/i.test(v.status || '')) continue;
-      out.ports[`po:${v.departurePortCode}`] = a;
-      out.ports[`po:${v.arrivalPortCode}`] = b;
-      out.sailings.push([0, `po:${v.departurePortCode}`, `po:${v.arrivalPortCode}`, dep, arr, `${a[0]} – ${b[0]}`, String(v.vesselName || '')]);
+      if (!a || !b || dep == null || arr == null || /cancel/i.test(v.status || '')) return [];
+      return [[a[0], b[0], dep, arr, String(v.vesselName || ''), '']];
+    });
+  }).then((l) => out.push(...l)).catch(() => {}))); // one direction failing still returns the other
+  return out;
+}
+
+// Irish Ferries list today's sailings per route as small tables: route, times, ship and status.
+async function irishSailings() {
+  const out = [];
+  const text = (h) => h.replace(/<[^>]*>/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+  await Promise.all(IF_PAGES.map((page) => hourlyCached(`if?p=${page}`, async () => {
+    const res = await fetch(`https://www.irishferries.com/uk-en/sailing-updates/${page}/`, { headers: { 'User-Agent': UA } });
+    if (!res.ok) return [];
+    const html = await res.text();
+    const rows = [];
+    for (const chunk of html.split('tab-sailing-row').slice(1)) {
+      const cell = (label) => { const m = chunk.match(new RegExp(`${label}</td>\\s*<td[^>]*>([\\s\\S]*?)</td>`)); return m ? text(m[1]) : ''; };
+      const [from, to] = cell('Route').split(/\s+-\s+/);
+      const dep = cell('Scheduled Departure').match(/(\d\d):(\d\d)/), arr = cell('Scheduled Arrival').match(/(\d\d):(\d\d)/);
+      const status = text((chunk.match(/class="status[^"]*">([\s\S]*?)<\/div>/) || [])[1] || '');
+      const a = IF_PORTS[from], b = IF_PORTS[to];
+      if (!a || !b || !dep || !arr || /cancel/i.test(status)) continue;
+      // The page lists today's sailings, in each port's own time.
+      const day = new Intl.DateTimeFormat('en-CA', { timeZone: a[2] }).format(new Date());
+      const d = localMinutes(`${day}T${dep[1]}:${dep[2]}:00`, a[2]);
+      let r = localMinutes(`${day}T${arr[1]}:${arr[2]}:00`, b[2]);
+      if (d == null || r == null) continue;
+      while (r <= d) r += 1440; // arrives after midnight
+      rows.push([from, to, d, r, cell('Ship'), /delay/i.test(status) ? 'Delayed' : '']);
     }
-  }).map((p) => p.catch(() => {}))); // one direction failing still returns the other
+    return rows;
+  }).then((l) => out.push(...l)).catch(() => {})));
+  return out;
+}
+
+// DFDS publish every departure on their network, in UTC, without the ship's name. Port positions
+// come from our own UN/LOCODE list. Dieppe–Newhaven is left out: its open timetable is already in.
+let portList = null;
+async function dfdsSailings(env) {
+  portList ||= env.ASSETS.fetch('https://assets.local/data/ports.json').then((r) => r.json()).catch(() => ({}));
+  const ports = await portList;
+  const day = (d) => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
+  const list = await hourlyCached('dfds?v=1', async () => {
+    const res = await fetch(`https://api.hellman.oxygen.dfds.cloud/prod/servicesunifiedbff/api/v2/departures?fromdate=${day(0)}&todate=${day(3)}`,
+      { headers: { Accept: 'application/json', 'User-Agent': UA } });
+    const d = res.ok ? await res.json().catch(() => ({})) : {};
+    return Array.isArray(d.departures) ? d.departures : [];
+  }).catch(() => []);
+  const where = (p) => {
+    const lo = p?.unlocode || '', q = ports[lo.slice(0, 2)]?.[lo.slice(2)];
+    if (q && q.length >= 3) return [p.name, q[1], q[2]];
+    const ours = Object.values(PO_PORTS).find((x) => x[0] === p?.name) || (IF_PORTS[p?.name] && [p.name, IF_PORTS[p.name][0], IF_PORTS[p.name][1]]);
+    return ours || null;
+  };
+  const out = [];
+  for (const v of list) {
+    const a = v.route?.departurePort, b = v.route?.arrivalPort;
+    if (!a || !b || /^(NHN|DPP)$/.test(a.code) && /^(NHN|DPP)$/.test(b.code)) continue;
+    const pa = where(a), pb = where(b);
+    const dep = Date.parse(v.scheduledDepartureTime), arr = Date.parse(v.scheduledArrivalTime);
+    if (!pa || !pb || !Number.isFinite(dep) || !Number.isFinite(arr)) continue;
+    out.push([pa, pb, Math.round(dep / 60000), Math.round(arr / 60000)]);
+  }
+  return out;
+}
+
+async function sailings(env) {
+  const [po, irish, dfds] = await Promise.all([poSailings(), irishSailings(), dfdsSailings(env)]);
+  const key = (x) => `${x[4].toUpperCase().replace(/^(MS|MV)\s+/, '').replace(/^(P&O|ISLE OF)\s+/, '')}|${Math.round(x[2] / 10)}`;
+  const seen = new Set(irish.map(key));
+  const out = { operators: ['P&O Ferries', 'Irish Ferries', 'DFDS'], ports: {}, sailings: [] };
+  const port = (name) => {
+    const p = PO_PORTS[Object.keys(PO_PORTS).find((k) => PO_PORTS[k][0] === name)] || (IF_PORTS[name] && [name, IF_PORTS[name][0], IF_PORTS[name][1]]);
+    out.ports[`live:${name}`] = p;
+    return `live:${name}`;
+  };
+  for (const x of [...irish, ...po.filter((x) => !seen.has(key(x)))]) {
+    out.sailings.push([IRISH_SHIP.test(x[4]) ? 1 : 0, port(x[0]), port(x[1]), x[2], x[3], `${x[0]} – ${x[1]}`, x[4], x[5]]);
+  }
+  for (const [a, b, dep, arr] of dfds) {
+    out.ports[`dfds:${a[0]}`] = a;
+    out.ports[`dfds:${b[0]}`] = b;
+    out.sailings.push([2, `dfds:${a[0]}`, `dfds:${b[0]}`, dep, arr, `${a[0]} – ${b[0]}`]);
+  }
   out.sailings.sort((x, y) => x[3] - y[3]);
   return json(out, 200, { 'Cache-Control': 'public, max-age=600' });
 }

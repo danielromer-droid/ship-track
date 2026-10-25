@@ -995,7 +995,7 @@ const MIN = 60_000;
 // The crossing this ship is most likely making: between the ports of its voyage, under way now,
 // and as far along in time as the ship is along the way.
 // A ship named on its sailings: the crossing it is on, or its next one.
-const shipKey = (n) => (n || '').toUpperCase().replace(/^(MS|MV|M\/S)\s+/, '').replace(/^P&O\s+/, '').replace(/[^A-Z0-9]/g, '');
+const shipKey = (n) => (n || '').toUpperCase().replace(/^(MS|MV|M\/S)\s+/, '').replace(/^(P&O|ISLE OF)\s+/, '').replace(/[^A-Z0-9]/g, '');
 function timetableByShip(e, now) {
   const me = shipKey(e.name);
   if (!me) return null;
@@ -1530,7 +1530,7 @@ function tickPanel(e) {
     const hm = (m) => new Date(m * MIN).toISOString().slice(11, 16);
     const day = (m) => new Date(m * MIN).toLocaleDateString([], { weekday: 'short', timeZone: 'UTC' });
     ttEl.innerHTML = `<small>Timetable · ${esc(tt.operator)}</small>
-      <span>${esc(tt.from)} ${hm(tt.s[3])} → ${esc(tt.to)} ${hm(tt.s[4])} UTC</span>
+      <span>${esc(tt.from)} ${hm(tt.s[3])} → ${esc(tt.to)} ${hm(tt.s[4])} UTC${tt.s[7] ? ` · ${esc(tt.s[7])}` : ''}</span>
       ${tt.nexts.length ? `<em>Next: ${tt.nexts.map((n) => `${day(n[3])} ${hm(n[3])}${tt.byShip ? ` from ${esc(ferries.ports[n[1]][0])}` : ''}`).join(' · ')} UTC</em>` : ''}
       <p>From the operator’s published timetable, not from the ship’s signal.</p>`;
   }
