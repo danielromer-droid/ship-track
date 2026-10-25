@@ -38,7 +38,8 @@ jobs:
             echo "::notice title=webcam $id::oEmbed $code $(jq -c '{title, author_name}' oe.json 2>/dev/null)"
           done
       - name: P&O sailings
-        run: echo "::notice title=sailings::$(curl -sS "${{ inputs.site }}/api/sailings" | jq -c '{n: (.sailings|length), ports, first: .sailings[0], ships: ([.sailings[][6]] | unique)}' | head -c 1500)"
+        run: |
+          echo "::notice title=sailings::$(curl -sS "${{ inputs.site }}/api/sailings" | jq -c '{n: (.sailings|length), ports, first: .sailings[0], ships: ([.sailings[][6]] | unique)}' | head -c 1500)"
       - name: Ship lookup by IMO
         run: |
           for imo in 9866689 9811000; do
