@@ -36,5 +36,5 @@ jobs:
           code=$(curl -sSL -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130 Safari/537.36' ${REF:+-e "$REF"} -D h.txt -o p.html -w '%{http_code} %{size_download} %{url_effective}' "$URL")
           echo "::notice title=status::$code"
           echo "::notice title=framing::$(grep -iE '^(x-frame-options|content-security-policy):' h.txt | tr -d '\r' | tr '\n' ' ' | head -c 1500)"
-          grep -oiE ".{0,$N}($PAT).{0,$N}" p.html | sort -u | head -40 | while read -r l; do echo "::notice title=match::$(echo "$l" | head -c 4000)"; done
-          if [ "$L" != 0 ]; then grep -m 3 -iE -A "$L" "$PAT" p.html | head -c 60000 | split -b 3900 - part_; for f in part_*; do echo "::notice title=lines $f::$(tr '\n' ' ' < "$f")"; done; fi
+          tr -d "\r" < p.html > q.html; grep -oiE ".{0,$N}($PAT).{0,$N}" q.html | sort -u | head -40 | while read -r l; do echo "::notice title=match::$(echo "$l" | head -c 4000)"; done
+          if [ "$L" != 0 ]; then grep -m 3 -iE -A "$L" "$PAT" q.html | tr -s " \t" | head -c 60000 | split -b 3900 - part_; for f in part_*; do echo "::notice title=lines $f::$(tr '\r\n' '  ' < "$f")"; done; fi
