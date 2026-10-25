@@ -976,13 +976,39 @@ function originText(dest) {
 // Kept apart from AIS: they say when a crossing is due, never where a ship is.
 let ferriesP = null, ferries = null;
 function ferryData() {
-  return (ferriesP ||= fetchJson('data/ferries.json').then((d) => (ferries = d)).catch(() => (ferries = { ports: {}, sailings: [] })));
+  const merge = ([d, extra]) => {
+    // Sailings read live from operators' own schedules join the published timetables.
+    if (extra?.sailings?.length) {
+      const op = d.operators.length;
+      d.operators.push(...extra.operators);
+      Object.assign(d.ports, extra.ports);
+      d.sailings = d.sailings.concat(extra.sailings.map((x) => [x[0] + op, ...x.slice(1)])).sort((x, y) => x[3] - y[3]);
+    }
+    return (ferries = d);
+  };
+  return (ferriesP ||= Promise.all([
+    fetchJson('data/ferries.json').catch(() => ({ operators: [], ports: {}, sailings: [] })),
+    fetchJson('api/sailings').catch(() => null),
+  ]).then(merge));
 }
 const MIN = 60_000;
 // The crossing this ship is most likely making: between the ports of its voyage, under way now,
 // and as far along in time as the ship is along the way.
+// A ship named on its sailings: the crossing it is on, or its next one.
+const shipKey = (n) => (n || '').toUpperCase().replace(/^(MS|MV|M\/S)\s+/, '').replace(/^P&O\s+/, '').replace(/[^A-Z0-9]/g, '');
+function timetableByShip(e, now) {
+  const me = shipKey(e.name);
+  if (!me) return null;
+  const mine = ferries.sailings.filter((s) => s[6] && shipKey(s[6]) === me && s[4] * MIN > now - 15 * MIN);
+  const s = mine.find((x) => x[3] * MIN <= now + 30 * MIN) || mine[0];
+  if (!s) return null;
+  const nexts = mine.filter((x) => x[3] > s[3]).slice(0, 3);
+  return { s, operator: ferries.operators[s[0]], from: ferries.ports[s[1]][0], to: ferries.ports[s[2]][0], nexts, byShip: true };
+}
 function timetableFor(e, p, now) {
-  if (!ferries?.sailings?.length || p?.status !== 'ok') return null;
+  if (!ferries?.sailings?.length) return null;
+  const own = timetableByShip(e, now);
+  if (own || p?.status !== 'ok') return own;
   const near = (key, place) => { const q = ferries.ports[key]; return q && place && km(q[1], q[2], place.lat, place.lon) < 15; };
   const at = posNow(e, now);
   let best = null, bestFit = 0.3;
@@ -1497,7 +1523,7 @@ function tickPanel(e) {
     : p?.status === 'loading' ? 'Finding the port…' : p?.status === 'none' ? `“${e.dest}” is not a port we know, so no route` : '';
   $('#dest-box').disabled = !ok;
   // The operator's timetable, for passenger ships on a route that publishes one.
-  if (e.cat === 'passenger' && ok && !ferries) ferryData().then(() => { panelDirty = true; });
+  if (e.cat === 'passenger' && !ferries) ferryData().then(() => { panelDirty = true; });
   const tt = e.cat === 'passenger' ? timetableFor(e, p, now) : null;
   const ttEl = $('#timetable');
   ttEl.hidden = !tt;
@@ -1506,7 +1532,7 @@ function tickPanel(e) {
     const day = (m) => new Date(m * MIN).toLocaleDateString([], { weekday: 'short', timeZone: 'UTC' });
     ttEl.innerHTML = `<small>Timetable · ${esc(tt.operator)}</small>
       <span>${esc(tt.from)} ${hm(tt.s[3])} → ${esc(tt.to)} ${hm(tt.s[4])} UTC</span>
-      ${tt.nexts.length ? `<em>Next: ${tt.nexts.map((n) => `${day(n[3])} ${hm(n[3])}`).join(' · ')} UTC</em>` : ''}
+      ${tt.nexts.length ? `<em>Next: ${tt.nexts.map((n) => `${day(n[3])} ${hm(n[3])}${tt.byShip ? ` from ${esc(ferries.ports[n[1]][0])}` : ''}`).join(' · ')} UTC</em>` : ''}
       <p>From the operator’s published timetable, not from the ship’s signal.</p>`;
   }
 

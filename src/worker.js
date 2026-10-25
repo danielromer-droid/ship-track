@@ -32,6 +32,7 @@ export default {
       if (url.pathname === '/api/ship') return shipLookup(url, env);
       if (url.pathname === '/api/extra') return await extra(url, ctx);
       if (url.pathname === '/api/photo') return await photo(url, ctx);
+      if (url.pathname === '/api/sailings') return await sailings(ctx);
     } catch (err) {
       return json({ error: err.message }, 502);
     }
@@ -406,6 +407,55 @@ async function cachedJson(ctx, url, seconds) {
   const text = await res.text();
   ctx.waitUntil(cache.put(key, new Response(text, { headers: { 'Cache-Control': `public, max-age=${seconds}` } })));
   return JSON.parse(text);
+}
+
+// ---------- P&O Dover–Calais sailings, by ship ----------
+// Read from the schedule P&O shows on its own site, at most once an hour per direction, and
+// returned in the shape of data/ferries.json plus the ship's name on each sailing.
+const PO_ROUTES = [['DOCA', 'Europe/London', 'Europe/Paris'], ['CADO', 'Europe/Paris', 'Europe/London']];
+const PO_PORTS = { DVR: ['Dover', 51.126, 1.329], CQF: ['Calais', 50.966, 1.864] };
+
+// "2026-10-25T17:20:00" in a time zone, as minutes since 1970.
+function localMinutes(text, tz) {
+  const guess = Date.parse(`${text}Z`);
+  if (!Number.isFinite(guess)) return null;
+  const offset = (t) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(t).map((x) => [x.type, x.value]));
+    return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - t;
+  };
+  let t = guess - offset(guess);
+  t = guess - offset(t); // right across a clock change
+  return Math.round(t / 60000);
+}
+
+async function sailings(ctx) {
+  const hour = Math.floor(Date.now() / 3600000) * 3600000;
+  const iso = (t) => new Date(t).toISOString().slice(0, 19) + 'Z';
+  const out = { operators: ['P&O Ferries'], ports: {}, sailings: [] };
+  await Promise.all(PO_ROUTES.map(async ([route, depTz, arrTz]) => {
+    const key = new Request(`https://cache.ship-track/po?r=${route}&h=${hour}`);
+    let hit = await caches.default.match(key), list;
+    if (hit) list = await hit.json();
+    else {
+      const res = await fetch(`https://www.pofreight.com/api/sailings?route=${route}&start=${iso(hour - 6 * 3600000)}&end=${iso(hour + 72 * 3600000)}`,
+        { headers: { Accept: 'application/json', 'User-Agent': 'ship-track (github.com/danielromer-droid/ship-track)' } });
+      if (!res.ok) return;
+      list = await res.json().catch(() => []);
+      if (!Array.isArray(list)) return;
+      ctx.waitUntil(caches.default.put(key, new Response(JSON.stringify(list), { headers: { 'Cache-Control': 'public, max-age=3600' } })));
+    }
+    for (const v of list) {
+      const a = PO_PORTS[v.departurePortCode], b = PO_PORTS[v.arrivalPortCode];
+      const dep = localMinutes(v.departureDateTimeLocalToPort, depTz), arr = localMinutes(v.arrivalDateTimeLocalToPort, arrTz);
+      if (!a || !b || dep == null || arr == null || /cancel/i.test(v.status || '')) continue;
+      out.ports[`po:${v.departurePortCode}`] = a;
+      out.ports[`po:${v.arrivalPortCode}`] = b;
+      out.sailings.push([0, `po:${v.departurePortCode}`, `po:${v.arrivalPortCode}`, dep, arr, `${a[0]} – ${b[0]}`, String(v.vesselName || '')]);
+    }
+  }).map((p) => p.catch(() => {}))); // one direction failing still returns the other
+  out.sailings.sort((x, y) => x[3] - y[3]);
+  return json(out, 200, { 'Cache-Control': 'public, max-age=600' });
 }
 
 async function extra(url, ctx) {
