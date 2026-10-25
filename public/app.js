@@ -2119,6 +2119,7 @@ for (const d of document.querySelectorAll('dialog.info')) d.addEventListener('cl
 
 const camBox = $('#cam');
 function openCam(c) {
+  if (boardBox) { boardBox.hidden = true; boardPort = null; }
   $('#cam-name').textContent = c.name;
   $('#cam-about').textContent = c.about || '';
   const still = $('#cam-still'), frame = $('#cam-frame');
@@ -2156,10 +2157,63 @@ fetchJson('data/webcams.json').then((cams) => {
     el.className = 'cam-marker';
     el.title = `Live webcam: ${c.name}`;
     el.setAttribute('aria-label', `Live webcam: ${c.name}`);
-    el.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3z"/></svg>';
+    el.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3z"/></svg>';
     el.addEventListener('click', (ev) => { ev.stopPropagation(); openCam(c); });
     new maplibregl.Marker({ element: el }).setLngLat([c.lon, c.lat]).addTo(map);
     el.setAttribute('aria-label', `Live webcam: ${c.name}`); // the marker replaces it with "Map marker"
   }
 }).catch(() => { /* no webcams, the map works without them */ });
 
+// ---------- departures and arrivals boards at the Channel ports ----------
+const BOARD_PORTS = [
+  { name: 'Dover', lat: 51.1205, lon: 1.3335, tz: 'Europe/London' },
+  { name: 'Calais', lat: 50.9665, lon: 1.8675, tz: 'Europe/Paris' },
+  { name: 'Dunkirk', lat: 51.0215, lon: 2.1975, tz: 'Europe/Paris' },
+];
+const boardBox = $('#board');
+let boardPort = null;
+function boardRows(port, now, leaving) {
+  const named = (key) => ferries.ports[key]?.[0] === port.name;
+  const time = (m) => new Date(m * MIN).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: port.tz });
+  const seen = new Set();
+  const rows = ferries.sailings.filter((x) => named(leaving ? x[1] : x[2]) && (leaving ? x[3] : x[4]) * MIN > now - 20 * MIN)
+    .sort((a, b) => (leaving ? a[3] - b[3] : a[4] - b[4]))
+    .filter((x) => { const k = `${leaving ? x[3] : x[4]}|${x[6] || x[0]}`; return !seen.has(k) && seen.add(k); })
+    .slice(0, 8);
+  if (!rows.length) return `<p class="empty">No ${leaving ? 'departures' : 'arrivals'} published for the next hours.</p>`;
+  return `<table>${rows.map((x) => {
+    const dep = x[3] * MIN, arr = x[4] * MIN;
+    const [label, cls] = x[7] === 'Delayed' ? ['Delayed', 'late'] : now >= arr ? ['Arrived', 'done']
+      : now >= dep ? (leaving ? ['Departed', 'done'] : ['At sea', 'sea']) : ['On time', ''];
+    const other = ferries.ports[leaving ? x[2] : x[1]]?.[0] || '';
+    return `<tr><td>${time(leaving ? x[3] : x[4])}</td><td>${leaving ? 'to' : 'from'} ${esc(other)}<small>${esc([x[6], ferries.operators[x[0]]].filter(Boolean).join(' · '))}</small></td><td class="st ${cls}">${label}</td></tr>`;
+  }).join('')}</table>`;
+}
+function renderBoard() {
+  if (!boardPort || !ferries) return;
+  const now = Date.now();
+  $('#board-name').textContent = boardPort.name;
+  $('#board-dep').innerHTML = boardRows(boardPort, now, true);
+  $('#board-arr').innerHTML = boardRows(boardPort, now, false);
+}
+function openBoard(port) {
+  closeCam();
+  boardPort = port;
+  boardBox.hidden = false;
+  $('#board-dep').innerHTML = $('#board-arr').innerHTML = '<p class="empty">Loading…</p>';
+  $('#board-name').textContent = port.name;
+  ferryData().then(renderBoard);
+}
+$('#board-close').addEventListener('click', () => { boardBox.hidden = true; boardPort = null; });
+setInterval(() => { if (!boardBox.hidden) renderBoard(); }, 30_000);
+for (const port of BOARD_PORTS) {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'port-marker';
+  el.title = `${port.name}: departures and arrivals`;
+  el.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><path d="M12 7v14M5 13a7 7 0 0 0 14 0M8 10h8"/></svg>';
+  el.addEventListener('click', (ev) => { ev.stopPropagation(); openBoard(port); });
+  // Set off up and right so it doesn't hide a webcam spot on the same harbour.
+  new maplibregl.Marker({ element: el, offset: [18, -18] }).setLngLat([port.lon, port.lat]).addTo(map);
+  el.setAttribute('aria-label', `${port.name}: departures and arrivals`);
+}
