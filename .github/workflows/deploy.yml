@@ -2,7 +2,8 @@
 # Needs two repository secrets (Settings → Secrets and variables → Actions):
 #   CLOUDFLARE_API_TOKEN  (template "Edit Cloudflare Workers")
 #   CLOUDFLARE_ACCOUNT_ID
-# and optionally AISSTREAM_API_KEY, which is copied into the Worker as a secret on each deploy.
+# and optionally AISSTREAM_API_KEY, which is copied into the Worker as a secret when the workflow is run by hand.
+# Pushes skip that step: the secret stays in Cloudflare, and uploading it sometimes failed the deploy.
 name: Deploy
 on:
   push:
@@ -26,7 +27,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
-          secrets: ${{ env.AISSTREAM_API_KEY != '' && 'AISSTREAM_API_KEY' || '' }}
+          secrets: ${{ github.event_name == 'workflow_dispatch' && env.AISSTREAM_API_KEY != '' && 'AISSTREAM_API_KEY' || '' }}
       - name: Explain the skipped deploy
         if: env.HAS_TOKEN != 'true'
         run: echo "::notice::Add the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets to deploy automatically."
