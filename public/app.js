@@ -309,12 +309,20 @@ const SATELLITE = {
   tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
   attribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
 };
+// Terrain: a topographic map with contour lines, woods and hill shading, in place of the base map.
+const TERRAIN = {
+  type: 'raster', tileSize: 256, maxzoom: 19,
+  tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}'],
+  attribution: 'Terrain map © Esri and its partners',
+};
 const RADAR_REFRESH_MS = 10 * 60_000;
-const overlays = { satellite: false, weather: false };
+const overlays = { satellite: false, terrain: false, weather: false };
 try { Object.assign(overlays, JSON.parse(localStorage.getItem('overlays')) || {}); } catch { /* defaults */ }
 let radar = null; // { url, time } of the latest RainViewer frame
 
 const OVERLAY_BUTTONS = {
+  terrain: { label: 'Terrain map',
+    icon: '<path d="M3 20l6-11 4 7 2-3 6 7z"/><path d="M8 11l1.5 2 1.5-2"/>' },
   satellite: { label: 'Satellite view',
     icon: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 15l5-5 4 4 3-3 6 6"/><circle cx="16" cy="8" r="1.5"/>' },
   weather: { label: 'Weather, waves and rain radar',
@@ -351,6 +359,12 @@ const RELIEF = {
 
 function toggleOverlay(key) {
   overlays[key] = !overlays[key];
+  // One base map at a time: terrain and satellite replace each other.
+  const other = { terrain: 'satellite', satellite: 'terrain' }[key];
+  if (other && overlays[key] && overlays[other]) {
+    overlays[other] = false;
+    document.querySelector(`[data-overlay="${other}"]`).setAttribute('aria-pressed', 'false');
+  }
   try { localStorage.setItem('overlays', JSON.stringify(overlays)); } catch { /* not remembered */ }
   document.querySelector(`[data-overlay="${key}"]`).setAttribute('aria-pressed', String(overlays[key]));
   if (key === 'weather' && overlays.weather) refreshRadar();
@@ -368,7 +382,14 @@ function addOverlays() {
   if (!map.getLayer('relief')) {
     map.addLayer({ id: 'relief', type: 'hillshade', source: 'dem', paint: RELIEF[isDark() ? 'dark' : 'light'] }, firstLabel?.id || ours);
   }
-  map.setLayoutProperty('relief', 'visibility', overlays.satellite ? 'none' : 'visible');
+  map.setLayoutProperty('relief', 'visibility', overlays.satellite || overlays.terrain ? 'none' : 'visible');
+  // The terrain map carries its own names, so it covers the base map's labels too.
+  if (overlays.terrain && !map.getLayer('terrain')) {
+    if (!map.getSource('terrain')) map.addSource('terrain', TERRAIN);
+    map.addLayer({ id: 'terrain', type: 'raster', source: 'terrain' }, ours);
+  } else if (!overlays.terrain && map.getLayer('terrain')) {
+    map.removeLayer('terrain');
+  }
   if (overlays.satellite && !map.getLayer('satellite')) {
     if (!map.getSource('satellite')) map.addSource('satellite', SATELLITE);
     map.addLayer({ id: 'satellite', type: 'raster', source: 'satellite' }, firstLabel?.id || ours);
