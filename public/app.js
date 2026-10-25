@@ -1422,7 +1422,6 @@ function renderPanel() {
       </button>
       <button type="button" class="btn more" id="more">${expanded ? 'Less' : 'More'}</button>
     </div>
-    ${state.mode === 'live' ? `<a class="photos-link" href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:${e.mmsi}" target="_blank" rel="noopener">More photos and voyage details on MarineTraffic ↗</a>` : ''}
     <p class="note">${state.mode === 'demo' ? 'Simulated ship: real ships appear once the app runs on Cloudflare with an aisstream.io key.'
       : 'AIS data from <a href="https://aisstream.io">aisstream.io</a> and, in the Baltic, Fintraffic / digitraffic.fi (CC BY 4.0). Ferry timetables from Brittany Ferries, DFDS and Corsica Linea via transport.data.gouv.fr (Licence Ouverte 2.0). Ships do not broadcast where a voyage began unless the crew types it; the solid line is where the ship went since you opened the map, the dashed line an estimated sea route to its destination.'}</p>`;
 

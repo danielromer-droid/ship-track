@@ -291,8 +291,6 @@ dialog.info .btn { flex: none; padding: 0 24px; }
 .photo.none .frame { display: none; }
 .photo.none figcaption { margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); font-size: 13px; white-space: normal; }
 .photo figcaption { margin-top: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.photos-link { font-size: 14px; font-weight: 500; color: var(--accent); text-decoration: none; }
-.photos-link:hover { text-decoration: underline; }
 .actions { display: flex; gap: 10px; }
 .btn {
   flex: 1; height: 48px; border-radius: 12px; font-size: 15px; font-weight: 600;
@@ -396,7 +394,7 @@ dialog.info .btn { flex: none; padding: 0 24px; }
   .stats svg { width: 20px; height: 20px; }
   .stats b { font-size: 15px; }
   .tabs button { height: 36px; font-size: 13px; }
-  .panel:not(.expanded) .tabs, .panel:not(.expanded) .times, .panel:not(.expanded) .photos-link { display: none; }
+  .panel:not(.expanded) .tabs, .panel:not(.expanded) .times { display: none; }
   .btn { height: 42px; font-size: 14px; }
   .panel:not(.expanded) .note { display: none; }
   .btn.more { display: flex; }

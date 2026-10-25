@@ -76,5 +76,5 @@ Things to know about AIS:
 ## Going further
 
 - Ship photos and particulars by IMO number, port arrivals and departures, and voyage history need a paid AIS provider
-  (Spire, MarineTraffic, VesselFinder, Datalastic); put its key in a Cloudflare secret like the aisstream.io one.
+  (Spire, VesselFinder, Datalastic); put its key in a Cloudflare secret like the aisstream.io one.
 - Native store apps (App Store, Play Store, Microsoft Store) can wrap this same PWA with Capacitor or PWABuilder.
