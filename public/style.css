@@ -166,6 +166,15 @@ dialog.info .btn { flex: none; padding: 0 24px; }
   background: var(--surface); border-radius: 12px; box-shadow: var(--shadow);
 }
 .legend li { display: flex; align-items: center; gap: 6px; }
+.depth-key { position: absolute; left: 16px; bottom: 128px; z-index: 2; width: 180px; padding: 8px 10px; display: flex; flex-direction: column; gap: 3px;
+  font-size: 12px; color: var(--muted); background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); }
+.depth-key[hidden] { display: none; }
+.depth-key .bands { display: flex; height: 10px; border-radius: 3px; overflow: hidden; }
+.depth-key .bands i { flex: 1; }
+.depth-key .ticks { display: flex; justify-content: space-between; font: 500 10px var(--mono); }
+.depth-key .ticks b { font-weight: 500; }
+.depth-key small { font-size: 11px; line-height: 1.3; }
+.depth-pop .maplibregl-popup-content { padding: 6px 10px; border-radius: 8px; font: 600 13px var(--mono); background: var(--surface); color: var(--ink); }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 .dot.ontime { background: var(--ontime); }
 .dot.minor { background: var(--minor); }

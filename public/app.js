@@ -316,13 +316,25 @@ const TERRAIN = {
   attribution: 'Terrain map © Esri and its partners',
 };
 const RADAR_REFRESH_MS = 10 * 60_000;
-const overlays = { satellite: false, terrain: false, weather: false };
+// Sea depth in bands like a chart's, drawn by the EMODnet Bathymetry server (European seas).
+const DEPTH_BANDS = [[5, '#E3EEF9'], [10, '#C6DBEF'], [20, '#9ECAE1'], [30, '#6BAED6'], [50, '#4292C6'], [100, '#2171B5'], [200, '#08519C'], [Infinity, '#08306B']];
+const DEPTH_SLD = '<StyledLayerDescriptor version="1.0.0" xmlns="http://www.opengis.net/sld"><NamedLayer><Name>emodnet:mean</Name><UserStyle><FeatureTypeStyle><Rule><RasterSymbolizer><ColorMap type="intervals">'
+  + [...DEPTH_BANDS].reverse().map(([m, c], i, all) => `<ColorMapEntry color="${c}" quantity="${i + 1 < all.length ? -all[i + 1][0] : 0}" opacity="1"/>`).join('')
+  + '<ColorMapEntry color="#FFFFFF" quantity="10000" opacity="0"/></ColorMap></RasterSymbolizer></Rule></FeatureTypeStyle></UserStyle></NamedLayer></StyledLayerDescriptor>';
+const DEPTH = {
+  type: 'raster', tileSize: 256, minzoom: 3,
+  tiles: [`https://ows.emodnet-bathymetry.eu/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=emodnet:mean&STYLES=&CRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=true&SLD_BODY=${encodeURIComponent(DEPTH_SLD)}`],
+  attribution: 'Sea depth: EMODnet Bathymetry (CC BY 4.0)',
+};
+const overlays = { satellite: false, terrain: false, depth: false, weather: false };
 try { Object.assign(overlays, JSON.parse(localStorage.getItem('overlays')) || {}); } catch { /* defaults */ }
 let radar = null; // { url, time } of the latest RainViewer frame
 
 const OVERLAY_BUTTONS = {
   terrain: { label: 'Terrain map',
     icon: '<path d="M3 20l6-11 4 7 2-3 6 7z"/><path d="M8 11l1.5 2 1.5-2"/>' },
+  depth: { label: 'Sea depth',
+    icon: '<path d="M2 6c2.5-2 4.5-2 7 0s4.5 2 7 0 4.5-2 6 0"/><path d="M12 10v10M8 16l4 4 4-4"/>' },
   satellite: { label: 'Satellite view',
     icon: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 15l5-5 4 4 3-3 6 6"/><circle cx="16" cy="8" r="1.5"/>' },
   weather: { label: 'Weather, waves and rain radar',
@@ -368,6 +380,8 @@ function toggleOverlay(key) {
   try { localStorage.setItem('overlays', JSON.stringify(overlays)); } catch { /* not remembered */ }
   document.querySelector(`[data-overlay="${key}"]`).setAttribute('aria-pressed', String(overlays[key]));
   if (key === 'weather' && overlays.weather) refreshRadar();
+  // Moving the depth layer above a newly chosen terrain or satellite map.
+  if (map.getLayer('depth') && (key === 'terrain' || key === 'satellite')) map.removeLayer('depth');
   addOverlays();
   updateWeather();
 }
@@ -396,6 +410,15 @@ function addOverlays() {
   } else if (!overlays.satellite && map.getLayer('satellite')) {
     map.removeLayer('satellite');
   }
+  // Depth sits over the sea of whichever map is on; under the base map's labels when there are any.
+  if (overlays.depth && !map.getLayer('depth')) {
+    if (!map.getSource('depth')) map.addSource('depth', DEPTH);
+    map.addLayer({ id: 'depth', type: 'raster', source: 'depth', paint: { 'raster-opacity': 0.85 } },
+      overlays.terrain || overlays.satellite ? ours : firstLabel?.id || ours);
+  } else if (!overlays.depth && map.getLayer('depth')) {
+    map.removeLayer('depth');
+  }
+  $('#depth-key').hidden = !overlays.depth;
   const radarUrl = overlays.weather && radar ? radar.url : null;
   if (map.getSource('radar') && map.getSource('radar').url_ !== radarUrl) {
     if (map.getLayer('radar')) map.removeLayer('radar');
@@ -612,11 +635,22 @@ function shipAt(point) {
   return best;
 }
 
+let depthPopup = null;
 map.on('click', (e) => {
   const id = shipAt(e.point);
   if (id != null) select(id);
   else deselect();
+  if (id == null && overlays.depth) showDepth(e.lngLat);
 });
+// With sea depth on, a tap on the sea says how deep it is there.
+async function showDepth(at) {
+  depthPopup?.remove();
+  const popup = depthPopup = new maplibregl.Popup({ closeButton: false, className: 'depth-pop' }).setLngLat(at).setText('Depth…').addTo(map);
+  const d = await fetchJson(`api/depth?lat=${at.lat.toFixed(4)}&lon=${at.lng.toFixed(4)}`).catch(() => null);
+  if (popup !== depthPopup) return;
+  if (d?.depth == null) { popup.remove(); return; } // land, or outside the depth model
+  popup.setText(`Depth about ${d.depth < 10 ? d.depth.toFixed(1) : Math.round(d.depth)} m`);
+}
 map.on('mousemove', (e) => {
   map.getCanvas().style.cursor = shipAt(e.point) != null ? 'pointer' : '';
 });

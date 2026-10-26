@@ -33,6 +33,7 @@ export default {
       if (url.pathname === '/api/extra') return await extra(url, ctx);
       if (url.pathname === '/api/photo') return await photo(url, ctx);
       if (url.pathname === '/api/sailings') return await sailings(env);
+      if (url.pathname === '/api/depth') return await depth(url);
     } catch (err) {
       return json({ error: err.message }, 502);
     }
@@ -546,6 +547,28 @@ async function sailings(env) {
   }
   out.sailings.sort((x, y) => x[3] - y[3]);
   return json(out, 200, { 'Cache-Control': 'public, max-age=600' });
+}
+
+// Sea depth at a point, from the EMODnet Bathymetry model (European seas, CC BY 4.0).
+async function depth(url) {
+  const lat = Number(url.searchParams.get('lat')), lon = Number(url.searchParams.get('lon'));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90) return json({ error: 'lat and lon please' }, 400);
+  const la = lat.toFixed(3), lo = lon.toFixed(3);
+  const key = new Request(`https://cache.ship-track/depth?p=${la},${lo}`);
+  const hit = await caches.default.match(key);
+  if (hit) return hit;
+  const d = 0.0005;
+  const q = new URLSearchParams({ SERVICE: 'WMS', VERSION: '1.1.1', REQUEST: 'GetFeatureInfo', LAYERS: 'emodnet:mean', QUERY_LAYERS: 'emodnet:mean',
+    STYLES: '', SRS: 'EPSG:4326', BBOX: `${lo - d},${la - d},${+lo + d},${+la + d}`, WIDTH: '3', HEIGHT: '3', X: '1', Y: '1', INFO_FORMAT: 'application/json' });
+  let metres = null;
+  try {
+    const res = await fetch(`https://ows.emodnet-bathymetry.eu/wms?${q}`, { headers: { 'User-Agent': UA } });
+    const v = res.ok ? (await res.json()).features?.[0]?.properties?.Depth : null;
+    if (Number.isFinite(v) && v < 0) metres = Math.round(-v * 10) / 10;
+  } catch { /* unknown depth */ }
+  const out = json({ depth: metres }, 200, { 'Cache-Control': 'public, max-age=2592000' });
+  await caches.default.put(key, out.clone());
+  return out;
 }
 
 async function extra(url, ctx) {
