@@ -161,7 +161,7 @@ dialog.info .btn { flex: none; padding: 0 24px; }
 .chips button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--surface); }
 
 .legend {
-  position: absolute; top: 16px; right: 16px; z-index: 2; margin: 0; padding: 10px 14px; list-style: none;
+  position: absolute; top: 16px; left: 16px; z-index: 2; margin: 0; padding: 10px 14px; list-style: none;
   display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted);
   background: var(--surface); border-radius: 12px; box-shadow: var(--shadow);
 }
